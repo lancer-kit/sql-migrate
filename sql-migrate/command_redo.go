@@ -84,7 +84,7 @@ func (c *RedoCommand) Run(args []string) int {
 			return 1
 		}
 
-		ui.Output(fmt.Sprintf("Reapplied migration %s.", migrations[0].Id))
+		ui.Output(fmt.Sprintf("Reapplied migration %s.", migrations[0].Name))
 	}
 
 	return 0

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/olekukonko/tablewriter"
+
 	"github.com/rubenv/sql-migrate"
 )
 
@@ -69,38 +70,45 @@ func (c *StatusCommand) Run(args []string) int {
 		return 1
 	}
 
+	var existingMigrations []*statusRow
+	for _, migrationRecord := range records {
+		em := &migrate.Migration{
+			Name:  migrationRecord.Name,
+			Ver:   migrationRecord.Ver,
+			Patch: migrationRecord.Patch,
+		}
+
+		if err := em.ParseName(); err != nil {
+			ui.Error(err.Error())
+			return 1
+		}
+		existingMigrations = append(existingMigrations, &statusRow{
+			Migration: em,
+			AppliedAt: migrationRecord.CreatedAt,
+		})
+	}
+
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Migration", "Applied"})
 	table.SetColWidth(60)
 
-	rows := make(map[string]*statusRow)
-
 	for _, m := range migrations {
-		rows[m.Id] = &statusRow{
-			Id:       m.Id,
-			Migrated: false,
-		}
-	}
-
-	for _, r := range records {
-		if rows[r.Id] == nil {
-			ui.Warn(fmt.Sprintf("Could not find migration file: %v", r.Id))
-			continue
+		var existMigration *statusRow
+		for _, existing := range existingMigrations {
+			if existing.VerInt == m.VerInt && existing.PatchInt >= m.PatchInt {
+				existMigration = existing
+				break
+			}
 		}
 
-		rows[r.Id].Migrated = true
-		rows[r.Id].AppliedAt = r.AppliedAt
-	}
-
-	for _, m := range migrations {
-		if rows[m.Id] != nil && rows[m.Id].Migrated {
+		if existMigration != nil {
 			table.Append([]string{
-				m.Id,
-				rows[m.Id].AppliedAt.String(),
+				m.Name,
+				existMigration.AppliedAt.String(),
 			})
 		} else {
 			table.Append([]string{
-				m.Id,
+				m.Name,
 				"no",
 			})
 		}
@@ -112,7 +120,6 @@ func (c *StatusCommand) Run(args []string) int {
 }
 
 type statusRow struct {
-	Id        string
-	Migrated  bool
+	*migrate.Migration
 	AppliedAt time.Time
 }

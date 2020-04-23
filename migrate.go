@@ -15,8 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rubenv/sql-migrate/sqlparse"
 	"gopkg.in/gorp.v1"
+
+	"github.com/rubenv/sql-migrate/sqlparse"
 )
 
 type MigrationDirection int
@@ -39,6 +40,8 @@ type MigrationSet struct {
 	IgnoreUnknown bool
 }
 
+var errorWrongFormat = errors.New("failed. Name migrations not format 0000_00_name.sql")
+
 var migSet = MigrationSet{}
 
 // NewMigrationSet returns a parametrized Migration object
@@ -49,7 +52,7 @@ func (ms MigrationSet) getTableName() string {
 	return ms.TableName
 }
 
-var numberPrefixRegex = regexp.MustCompile(`^(\d+).*$`)
+var numberPrefixRegex = regexp.MustCompile(`^(\d+)_(\d+).*$`)
 
 // PlanError happens where no migration plan could be created between the sets
 // of already applied migrations and the currently found. For example, when the database
@@ -68,7 +71,7 @@ func newPlanError(migration *Migration, errorMessage string) error {
 
 func (p *PlanError) Error() string {
 	return fmt.Sprintf("Unable to create migration plan because of %s: %s",
-		p.Migration.Id, p.ErrorMessage)
+		p.Migration.Name, p.ErrorMessage)
 }
 
 // TxError is returned when any error is encountered during a database
@@ -87,7 +90,7 @@ func newTxError(migration *PlannedMigration, err error) error {
 }
 
 func (e *TxError) Error() string {
-	return e.Err.Error() + " handling " + e.Migration.Id
+	return e.Err.Error() + " handling " + e.Migration.Name
 }
 
 // Set the name of the table used to store migration info.
@@ -115,42 +118,37 @@ func SetIgnoreUnknown(v bool) {
 }
 
 type Migration struct {
-	Id   string
-	Up   []string
-	Down []string
+	Name     string
+	Ver      string
+	VerInt   int64
+	Patch    string
+	PatchInt int64
+	Up       []string
+	Down     []string
 
 	DisableTransactionUp   bool
 	DisableTransactionDown bool
 }
 
 func (m Migration) Less(other *Migration) bool {
-	switch {
-	case m.isNumeric() && other.isNumeric() && m.VersionInt() != other.VersionInt():
-		return m.VersionInt() < other.VersionInt()
-	case m.isNumeric() && !other.isNumeric():
-		return true
-	case !m.isNumeric() && other.isNumeric():
-		return false
-	default:
-		return m.Id < other.Id
+	if m.VerInt == other.VerInt && m.PatchInt == other.PatchInt {
+		return m.Name < other.Name
 	}
+	return m.VerInt < other.VerInt || (m.VerInt == other.VerInt && m.PatchInt < other.PatchInt)
 }
 
-func (m Migration) isNumeric() bool {
-	return len(m.NumberPrefixMatches()) > 0
-}
-
-func (m Migration) NumberPrefixMatches() []string {
-	return numberPrefixRegex.FindStringSubmatch(m.Id)
-}
-
-func (m Migration) VersionInt() int64 {
-	v := m.NumberPrefixMatches()[1]
-	value, err := strconv.ParseInt(v, 10, 64)
+func (m *Migration) ParseName() error {
+	var err error
+	m.VerInt, err = strconv.ParseInt(m.Ver, 10, 64)
 	if err != nil {
-		panic(fmt.Sprintf("Could not parse %q into int64: %s", v, err))
+		return fmt.Errorf("could not parse version %q into int64: %s", m.Name, err)
 	}
-	return value
+
+	m.PatchInt, err = strconv.ParseInt(m.Patch, 10, 64)
+	if err != nil {
+		return fmt.Errorf("could not parse patch %q into int64: %s", m.Name, err)
+	}
+	return nil
 }
 
 type PlannedMigration struct {
@@ -167,8 +165,11 @@ func (b byId) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b byId) Less(i, j int) bool { return b[i].Less(b[j]) }
 
 type MigrationRecord struct {
-	Id        string    `db:"id"`
-	AppliedAt time.Time `db:"applied_at"`
+	Ver       string    `db:"ver"`
+	Patch     string    `db:"patch"`
+	Name      string    `db:"name"`
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
 }
 
 type OracleDialect struct {
@@ -390,14 +391,27 @@ func (p PackrMigrationSource) FindMigrations() ([]*Migration, error) {
 }
 
 // Migration parsing
-func ParseMigration(id string, r io.ReadSeeker) (*Migration, error) {
+func ParseMigration(nameFile string, r io.ReadSeeker) (*Migration, error) {
 	m := &Migration{
-		Id: id,
+		Name: nameFile,
+	}
+
+	prefixMatches := numberPrefixRegex.FindStringSubmatch(m.Name)
+	if len(prefixMatches) < 3 {
+		return nil, errorWrongFormat
+	}
+
+	m.Ver = prefixMatches[1]
+	m.Patch = prefixMatches[2]
+
+	err := m.ParseName()
+	if err != nil {
+		return nil, fmt.Errorf("error parsing name migrations (%s): %s", nameFile, err)
 	}
 
 	parsed, err := sqlparse.ParseMigration(r)
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing migration (%s): %s", id, err)
+		return nil, fmt.Errorf("Error parsing migration (%s): %s", nameFile, err)
 	}
 
 	m.Up = parsed.UpStatements
@@ -412,6 +426,8 @@ func ParseMigration(id string, r io.ReadSeeker) (*Migration, error) {
 type SqlExecutor interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 	Insert(list ...interface{}) error
+	Update(list ...interface{}) (int64, error)
+	Get(i interface{}, keys ...interface{}) (interface{}, error)
 	Delete(list ...interface{}) (int64, error)
 }
 
@@ -441,6 +457,14 @@ func (ms MigrationSet) ExecMax(db *sql.DB, dialect string, m MigrationSource, di
 	migrations, dbMap, err := ms.PlanMigration(db, dialect, m, dir, max)
 	if err != nil {
 		return 0, err
+	}
+
+	minPatches := make(map[int64]int64)
+	for _, migration := range migrations {
+		curMinPatch, ok := minPatches[migration.VerInt]
+		if !ok || migration.PatchInt < curMinPatch {
+			minPatches[migration.VerInt] = migration.PatchInt
+		}
 	}
 
 	// Apply migrations
@@ -473,10 +497,28 @@ func (ms MigrationSet) ExecMax(db *sql.DB, dialect string, m MigrationSource, di
 
 		switch dir {
 		case Up:
-			err = executor.Insert(&MigrationRecord{
-				Id:        migration.Id,
-				AppliedAt: time.Now(),
-			})
+			obj, err := executor.Get(MigrationRecord{}, migration.Ver)
+			if err != nil {
+				if trans, ok := executor.(*gorp.Transaction); ok {
+					_ = trans.Rollback()
+				}
+				return applied, newTxError(migration, err)
+			}
+
+			if obj == nil {
+				err = executor.Insert(&MigrationRecord{
+					Ver:       migration.Ver,
+					Patch:     migration.Patch,
+					Name:      migration.Name,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				})
+			} else {
+				original := obj.(*MigrationRecord)
+				original.Patch = migration.Patch
+				original.UpdatedAt = time.Now()
+				_, err = executor.Update(original)
+			}
 			if err != nil {
 				if trans, ok := executor.(*gorp.Transaction); ok {
 					_ = trans.Rollback()
@@ -485,9 +527,27 @@ func (ms MigrationSet) ExecMax(db *sql.DB, dialect string, m MigrationSource, di
 				return applied, newTxError(migration, err)
 			}
 		case Down:
-			_, err := executor.Delete(&MigrationRecord{
-				Id: migration.Id,
-			})
+			minPatch, ok := minPatches[migration.VerInt]
+
+			if !ok || migration.PatchInt == minPatch {
+				_, err = executor.Delete(&MigrationRecord{
+					Ver:   migration.Ver,
+					Patch: migration.Patch,
+					Name:  migration.Name,
+				})
+			} else {
+				obj, err := executor.Get(MigrationRecord{}, migration.Ver)
+				if err != nil {
+					if trans, ok := executor.(*gorp.Transaction); ok {
+						_ = trans.Rollback()
+					}
+					return 0, err
+				}
+				original := obj.(*MigrationRecord)
+				original.Patch = migration.Patch
+				original.UpdatedAt = time.Now()
+				_, err = executor.Update(original)
+			}
 			if err != nil {
 				if trans, ok := executor.(*gorp.Transaction); ok {
 					_ = trans.Rollback()
@@ -536,9 +596,16 @@ func (ms MigrationSet) PlanMigration(db *sql.DB, dialect string, m MigrationSour
 	// Sort migrations that have been run by Id.
 	var existingMigrations []*Migration
 	for _, migrationRecord := range migrationRecords {
-		existingMigrations = append(existingMigrations, &Migration{
-			Id: migrationRecord.Id,
-		})
+		em := &Migration{
+			Name:  migrationRecord.Name,
+			Ver:   migrationRecord.Ver,
+			Patch: migrationRecord.Patch,
+		}
+
+		if err := em.ParseName(); err != nil {
+			return nil, nil, err
+		}
+		existingMigrations = append(existingMigrations, em)
 	}
 	sort.Sort(byId(existingMigrations))
 
@@ -547,10 +614,10 @@ func (ms MigrationSet) PlanMigration(db *sql.DB, dialect string, m MigrationSour
 	if !ms.IgnoreUnknown {
 		migrationsSearch := make(map[string]struct{})
 		for _, migration := range migrations {
-			migrationsSearch[migration.Id] = struct{}{}
+			migrationsSearch[migration.Ver+"_"+migration.Patch] = struct{}{}
 		}
 		for _, existingMigration := range existingMigrations {
-			if _, ok := migrationsSearch[existingMigration.Id]; !ok {
+			if _, ok := migrationsSearch[existingMigration.Ver+"_"+existingMigration.Patch]; !ok {
 				return nil, nil, newPlanError(existingMigration, "unknown migration in database")
 			}
 		}
@@ -571,7 +638,7 @@ func (ms MigrationSet) PlanMigration(db *sql.DB, dialect string, m MigrationSour
 	}
 
 	// Figure out which migrations to apply
-	toApply := ToApply(migrations, record.Id, dir)
+	toApply := ToApply(migrations, record, dir)
 	toApplyCount := len(toApply)
 	if max > 0 && max < toApplyCount {
 		toApplyCount = max
@@ -621,10 +688,29 @@ func SkipMax(db *sql.DB, dialect string, m MigrationSource, dir MigrationDirecti
 			}
 		}
 
-		err = executor.Insert(&MigrationRecord{
-			Id:        migration.Id,
-			AppliedAt: time.Now(),
-		})
+		obj, err := executor.Get(MigrationRecord{}, migration.Ver)
+		if err != nil {
+			if trans, ok := executor.(*gorp.Transaction); ok {
+				_ = trans.Rollback()
+			}
+			return 0, newTxError(migration, err)
+		}
+
+		if obj == nil {
+			err = executor.Insert(&MigrationRecord{
+				Ver:       migration.Ver,
+				Patch:     migration.Patch,
+				Name:      migration.Name,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			})
+		} else {
+			original := obj.(*MigrationRecord)
+			original.Patch = migration.Patch
+			original.UpdatedAt = time.Now()
+			_, err = executor.Update(original)
+		}
+
 		if err != nil {
 			if trans, ok := executor.(*gorp.Transaction); ok {
 				_ = trans.Rollback()
@@ -646,12 +732,12 @@ func SkipMax(db *sql.DB, dialect string, m MigrationSource, dir MigrationDirecti
 }
 
 // Filter a slice of migrations into ones that should be applied.
-func ToApply(migrations []*Migration, current string, direction MigrationDirection) []*Migration {
+func ToApply(migrations []*Migration, current *Migration, direction MigrationDirection) []*Migration {
 	var index = -1
-	if current != "" {
+	if current.Name != "" {
 		for index < len(migrations)-1 {
 			index++
-			if migrations[index].Id == current {
+			if migrations[index].VerInt == current.VerInt && migrations[index].PatchInt == current.PatchInt {
 				break
 			}
 		}
@@ -680,7 +766,7 @@ func ToCatchup(migrations, existingMigrations []*Migration, lastRun *Migration) 
 	for _, migration := range migrations {
 		found := false
 		for _, existing := range existingMigrations {
-			if existing.Id == migration.Id {
+			if existing.VerInt == migration.VerInt && existing.PatchInt >= migration.PatchInt {
 				found = true
 				break
 			}
@@ -707,7 +793,7 @@ func (ms MigrationSet) GetMigrationRecords(db *sql.DB, dialect string) ([]*Migra
 	}
 
 	var records []*MigrationRecord
-	query := fmt.Sprintf("SELECT * FROM %s ORDER BY id ASC", dbMap.Dialect.QuotedTableForQuery(ms.SchemaName, ms.getTableName()))
+	query := fmt.Sprintf("SELECT * FROM %s ORDER BY ver ASC", dbMap.Dialect.QuotedTableForQuery(ms.SchemaName, ms.getTableName()))
 	_, err = dbMap.Select(&records, query)
 	if err != nil {
 		return nil, err
@@ -744,7 +830,8 @@ Check https://github.com/go-sql-driver/mysql#parsetime for more info.`)
 
 	// Create migration database map
 	dbMap := &gorp.DbMap{Db: db, Dialect: d}
-	table := dbMap.AddTableWithNameAndSchema(MigrationRecord{}, ms.SchemaName, ms.getTableName()).SetKeys(false, "Id")
+	table := dbMap.AddTableWithNameAndSchema(MigrationRecord{}, ms.SchemaName, ms.getTableName()).
+		SetKeys(false, "ver")
 	//dbMap.TraceOn("", log.New(os.Stdout, "migrate: ", log.Lmicroseconds))
 
 	if dialect == "oci8" || dialect == "godror" {
