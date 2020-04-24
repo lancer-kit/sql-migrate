@@ -1,47 +1,28 @@
 package migrate
 
 import (
-	"database/sql"
+	"fmt"
 	"net/http"
 
 	"github.com/gobuffalo/packr/v2"
 	_ "github.com/mattn/go-sqlite3"
 	. "gopkg.in/check.v1"
-	"gopkg.in/gorp.v1"
 )
 
-var sqliteMigrations = []*Migration{
-	&Migration{
-		Id:   "123",
-		Up:   []string{"CREATE TABLE people (id int)"},
-		Down: []string{"DROP TABLE people"},
-	},
-	&Migration{
-		Id:   "124",
-		Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
-		Down: []string{"SELECT 0"}, // Not really supported
-	},
+var sqliteMigrationsPatch = []*MigrationPatch{{
+	Name: "0123_00_test.sql",
+	Up:   []string{"CREATE TABLE people (id int)"},
+	Down: []string{"DROP TABLE people"},
+}, {
+	Name: "0124_00_test.sql",
+	Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
+	Down: []string{"SELECT 0"}, // Not really supported
+},
 }
 
-type SqliteMigrateSuite struct {
-	Db    *sql.DB
-	DbMap *gorp.DbMap
-}
-
-var _ = Suite(&SqliteMigrateSuite{})
-
-func (s *SqliteMigrateSuite) SetUpTest(c *C) {
-	var err error
-	db, err := sql.Open("sqlite3", ":memory:")
-	c.Assert(err, IsNil)
-
-	s.Db = db
-	s.DbMap = &gorp.DbMap{Db: db, Dialect: &gorp.SqliteDialect{}}
-}
-
-func (s *SqliteMigrateSuite) TestRunMigration(c *C) {
+func (s *SqliteMigrateSuite) TestRunMigrationPatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: sqliteMigrations[:1],
+		MigrationsPatch: sqliteMigrationsPatch[:1],
 	}
 
 	// Executes one migration
@@ -59,9 +40,9 @@ func (s *SqliteMigrateSuite) TestRunMigration(c *C) {
 	c.Assert(n, Equals, 0)
 }
 
-func (s *SqliteMigrateSuite) TestRunMigrationEscapeTable(c *C) {
+func (s *SqliteMigrateSuite) TestRunMigrationEscapeTablePatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: sqliteMigrations[:1],
+		MigrationPatchs: sqliteMigrationsPatch[:1],
 	}
 
 	SetTable(`my migrations`)
@@ -72,9 +53,9 @@ func (s *SqliteMigrateSuite) TestRunMigrationEscapeTable(c *C) {
 	c.Assert(n, Equals, 1)
 }
 
-func (s *SqliteMigrateSuite) TestMigrateMultiple(c *C) {
+func (s *SqliteMigrateSuite) TestMigrateMultiplePatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: sqliteMigrations[:2],
+		MigrationsPatch: sqliteMigrationsPatch[:2],
 	}
 
 	// Executes two migrations
@@ -87,9 +68,9 @@ func (s *SqliteMigrateSuite) TestMigrateMultiple(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func (s *SqliteMigrateSuite) TestMigrateIncremental(c *C) {
+func (s *SqliteMigrateSuite) TestMigrateIncrementalPatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: sqliteMigrations[:1],
+		MigrationsPatch: sqliteMigrationsPatch[:1],
 	}
 
 	// Executes one migration
@@ -99,7 +80,7 @@ func (s *SqliteMigrateSuite) TestMigrateIncremental(c *C) {
 
 	// Execute a new migration
 	migrations = &MemoryMigrationSource{
-		Migrations: sqliteMigrations[:2],
+		MigrationsPatch: sqliteMigrationsPatch[:2],
 	}
 	n, err = Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
@@ -110,7 +91,7 @@ func (s *SqliteMigrateSuite) TestMigrateIncremental(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func (s *SqliteMigrateSuite) TestFileMigrate(c *C) {
+func (s *SqliteMigrateSuite) TestFileMigratePatch(c *C) {
 	migrations := &FileMigrationSource{
 		Dir: "test-migrations",
 	}
@@ -126,7 +107,7 @@ func (s *SqliteMigrateSuite) TestFileMigrate(c *C) {
 	c.Assert(id, Equals, int64(1))
 }
 
-func (s *SqliteMigrateSuite) TestHttpFileSystemMigrate(c *C) {
+func (s *SqliteMigrateSuite) TestHttpFileSystemMigratePatch(c *C) {
 	migrations := &HttpFileSystemMigrationSource{
 		FileSystem: http.Dir("test-migrations"),
 	}
@@ -142,7 +123,8 @@ func (s *SqliteMigrateSuite) TestHttpFileSystemMigrate(c *C) {
 	c.Assert(id, Equals, int64(1))
 }
 
-func (s *SqliteMigrateSuite) TestAssetMigrate(c *C) {
+//go:generate go-bindata --ignore .+\.go$ -pkg migrate -o bindata_test.go ./test-migrations
+func (s *SqliteMigrateSuite) TestAssetMigratePatch(c *C) {
 	migrations := &AssetMigrationSource{
 		Asset:    Asset,
 		AssetDir: AssetDir,
@@ -160,7 +142,7 @@ func (s *SqliteMigrateSuite) TestAssetMigrate(c *C) {
 	c.Assert(id, Equals, int64(1))
 }
 
-func (s *SqliteMigrateSuite) TestPackrMigrate(c *C) {
+func (s *SqliteMigrateSuite) TestPackrMigratePatch(c *C) {
 	migrations := &PackrMigrationSource{
 		Box: packr.New("migrations", "test-migrations"),
 	}
@@ -176,7 +158,7 @@ func (s *SqliteMigrateSuite) TestPackrMigrate(c *C) {
 	c.Assert(id, Equals, int64(1))
 }
 
-func (s *SqliteMigrateSuite) TestPackrMigrateDir(c *C) {
+func (s *SqliteMigrateSuite) TestPackrMigrateDirPatch(c *C) {
 	migrations := &PackrMigrationSource{
 		Box: packr.NewBox("."),
 		Dir: "./test-migrations/",
@@ -193,7 +175,7 @@ func (s *SqliteMigrateSuite) TestPackrMigrateDir(c *C) {
 	c.Assert(id, Equals, int64(1))
 }
 
-func (s *SqliteMigrateSuite) TestMigrateMax(c *C) {
+func (s *SqliteMigrateSuite) TestMigrateMaxPatch(c *C) {
 	migrations := &FileMigrationSource{
 		Dir: "test-migrations",
 	}
@@ -208,7 +190,7 @@ func (s *SqliteMigrateSuite) TestMigrateMax(c *C) {
 	c.Assert(id, Equals, int64(0))
 }
 
-func (s *SqliteMigrateSuite) TestMigrateDown(c *C) {
+func (s *SqliteMigrateSuite) TestMigrateDownPatch(c *C) {
 	migrations := &FileMigrationSource{
 		Dir: "test-migrations",
 	}
@@ -247,7 +229,7 @@ func (s *SqliteMigrateSuite) TestMigrateDown(c *C) {
 	c.Assert(n, Equals, 0)
 }
 
-func (s *SqliteMigrateSuite) TestMigrateDownFull(c *C) {
+func (s *SqliteMigrateSuite) TestMigrateDownFullPatch(c *C) {
 	migrations := &FileMigrationSource{
 		Dir: "test-migrations",
 	}
@@ -276,13 +258,13 @@ func (s *SqliteMigrateSuite) TestMigrateDownFull(c *C) {
 	c.Assert(n, Equals, 0)
 }
 
-func (s *SqliteMigrateSuite) TestMigrateTransaction(c *C) {
+func (s *SqliteMigrateSuite) TestMigrateTransactionPatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: []*Migration{
-			sqliteMigrations[0],
-			sqliteMigrations[1],
-			&Migration{
-				Id:   "125",
+		MigrationsPatch: []*MigrationPatch{
+			sqliteMigrationsPatch[0],
+			sqliteMigrationsPatch[1],
+			{
+				Name: "0125_00_test.sql",
 				Up:   []string{"INSERT INTO people (id, first_name) VALUES (1, 'Test')", "SELECT fail"},
 				Down: []string{}, // Not important here
 			},
@@ -300,21 +282,21 @@ func (s *SqliteMigrateSuite) TestMigrateTransaction(c *C) {
 	c.Assert(count, Equals, int64(0))
 }
 
-func (s *SqliteMigrateSuite) TestPlanMigration(c *C) {
+func (s *SqliteMigrateSuite) TestPlanMigrationPatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: []*Migration{
-			&Migration{
-				Id:   "1_create_table.sql",
+		MigrationsPatch: []*MigrationPatch{
+			{
+				Name: "0001_00_create_table.sql",
 				Up:   []string{"CREATE TABLE people (id int)"},
 				Down: []string{"DROP TABLE people"},
 			},
-			&Migration{
-				Id:   "2_alter_table.sql",
+			{
+				Name: "0002_00_alter_table.sql",
 				Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
 				Down: []string{"SELECT 0"}, // Not really supported
 			},
-			&Migration{
-				Id:   "10_add_last_name.sql",
+			{
+				Name: "0010_00_add_last_name.sql",
 				Up:   []string{"ALTER TABLE people ADD COLUMN last_name text"},
 				Down: []string{"ALTER TABLE people DROP COLUMN last_name"},
 			},
@@ -324,8 +306,8 @@ func (s *SqliteMigrateSuite) TestPlanMigration(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 3)
 
-	migrations.Migrations = append(migrations.Migrations, &Migration{
-		Id:   "11_add_middle_name.sql",
+	migrations.MigrationsPatch = append(migrations.MigrationsPatch, &MigrationPatch{
+		Name: "0011_00_add_middle_name.sql",
 		Up:   []string{"ALTER TABLE people ADD COLUMN middle_name text"},
 		Down: []string{"ALTER TABLE people DROP COLUMN middle_name"},
 	})
@@ -343,24 +325,21 @@ func (s *SqliteMigrateSuite) TestPlanMigration(c *C) {
 	c.Assert(plannedMigrations[2].Migration, Equals, migrations.Migrations[0])
 }
 
-func (s *SqliteMigrateSuite) TestSkipMigration(c *C) {
+func (s *SqliteMigrateSuite) TestSkipMigrationPatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: []*Migration{
-			&Migration{
-				Id:   "1_create_table.sql",
-				Up:   []string{"CREATE TABLE people (id int)"},
-				Down: []string{"DROP TABLE people"},
-			},
-			&Migration{
-				Id:   "2_alter_table.sql",
-				Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
-				Down: []string{"SELECT 0"}, // Not really supported
-			},
-			&Migration{
-				Id:   "10_add_last_name.sql",
-				Up:   []string{"ALTER TABLE people ADD COLUMN last_name text"},
-				Down: []string{"ALTER TABLE people DROP COLUMN last_name"},
-			},
+		MigrationsPatch: []*MigrationPatch{{
+			Name: "0001_00_create_table.sql",
+			Up:   []string{"CREATE TABLE people (id int)"},
+			Down: []string{"DROP TABLE people"},
+		}, {
+			Name: "0002_00_alter_table.sql",
+			Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
+			Down: []string{"SELECT 0"}, // Not really supported
+		}, {
+			Name: "0010_00_add_last_name.sql",
+			Up:   []string{"ALTER TABLE people ADD COLUMN last_name text"},
+			Down: []string{"ALTER TABLE people DROP COLUMN last_name"},
+		},
 		},
 	}
 	n, err := SkipMax(s.Db, "sqlite3", migrations, Up, 0)
@@ -381,116 +360,108 @@ func (s *SqliteMigrateSuite) TestSkipMigration(c *C) {
 	c.Assert(n2, Equals, 0)
 }
 
-func (s *SqliteMigrateSuite) TestPlanMigrationWithHoles(c *C) {
+func (s *SqliteMigrateSuite) TestPlanMigrationWithHolesPatch(c *C) {
 	up := "SELECT 0"
 	down := "SELECT 1"
 	migrations := &MemoryMigrationSource{
-		Migrations: []*Migration{
-			&Migration{
-				Id:   "1",
-				Up:   []string{up},
-				Down: []string{down},
-			},
-			&Migration{
-				Id:   "3",
-				Up:   []string{up},
-				Down: []string{down},
-			},
+		MigrationsPatch: []*MigrationPatch{{
+			Name: "0001_00",
+			Up:   []string{up},
+			Down: []string{down},
+		}, {
+			Name: "0003_00",
+			Up:   []string{up},
+			Down: []string{down},
+		},
 		},
 	}
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
 	c.Assert(n, Equals, 2)
 
-	migrations.Migrations = append(migrations.Migrations, &Migration{
-		Id:   "2",
+	migrations.MigrationsPatch = append(migrations.MigrationsPatch, &MigrationPatch{
+		Name: "0002_00",
 		Up:   []string{up},
 		Down: []string{down},
 	})
 
-	migrations.Migrations = append(migrations.Migrations, &Migration{
-		Id:   "4",
+	migrations.MigrationsPatch = append(migrations.MigrationsPatch, &MigrationPatch{
+		Name: "0004_00",
 		Up:   []string{up},
 		Down: []string{down},
 	})
 
-	migrations.Migrations = append(migrations.Migrations, &Migration{
-		Id:   "5",
+	migrations.MigrationsPatch = append(migrations.MigrationsPatch, &MigrationPatch{
+		Name: "0005_00",
 		Up:   []string{up},
 		Down: []string{down},
 	})
 
 	// apply all the missing migrations
-	plannedMigrations, _, err := PlanMigration(s.Db, "sqlite3", migrations, Up, 0)
+	plannedMigrations, _, err := PlanMigrationPatch(s.Db, "sqlite3", migrations, Up, 0)
 	c.Assert(err, IsNil)
 	c.Assert(plannedMigrations, HasLen, 3)
-	c.Assert(plannedMigrations[0].Migration.Id, Equals, "2")
+	c.Assert(plannedMigrations[0].MigrationPatch.Name, Equals, "0002_00")
 	c.Assert(plannedMigrations[0].Queries[0], Equals, up)
-	c.Assert(plannedMigrations[1].Migration.Id, Equals, "4")
+	c.Assert(plannedMigrations[1].MigrationPatch.Name, Equals, "0004_00")
 	c.Assert(plannedMigrations[1].Queries[0], Equals, up)
-	c.Assert(plannedMigrations[2].Migration.Id, Equals, "5")
+	c.Assert(plannedMigrations[2].MigrationPatch.Name, Equals, "0005_00")
 	c.Assert(plannedMigrations[2].Queries[0], Equals, up)
 
 	// first catch up to current target state 123, then migrate down 1 step to 12
-	plannedMigrations, _, err = PlanMigration(s.Db, "sqlite3", migrations, Down, 1)
+	plannedMigrations, _, err = PlanMigrationPatch(s.Db, "sqlite3", migrations, Down, 1)
 	c.Assert(err, IsNil)
 	c.Assert(plannedMigrations, HasLen, 2)
-	c.Assert(plannedMigrations[0].Migration.Id, Equals, "2")
+	c.Assert(plannedMigrations[0].MigrationPatch.Name, Equals, "0002_00")
 	c.Assert(plannedMigrations[0].Queries[0], Equals, up)
-	c.Assert(plannedMigrations[1].Migration.Id, Equals, "3")
+	c.Assert(plannedMigrations[1].MigrationPatch.Name, Equals, "0003_00")
 	c.Assert(plannedMigrations[1].Queries[0], Equals, down)
 
 	// first catch up to current target state 123, then migrate down 2 steps to 1
-	plannedMigrations, _, err = PlanMigration(s.Db, "sqlite3", migrations, Down, 2)
+	plannedMigrations, _, err = PlanMigrationPatch(s.Db, "sqlite3", migrations, Down, 2)
 	c.Assert(err, IsNil)
 	c.Assert(plannedMigrations, HasLen, 3)
-	c.Assert(plannedMigrations[0].Migration.Id, Equals, "2")
+	c.Assert(plannedMigrations[0].MigrationPatch.Name, Equals, "0002_00")
 	c.Assert(plannedMigrations[0].Queries[0], Equals, up)
-	c.Assert(plannedMigrations[1].Migration.Id, Equals, "3")
+	c.Assert(plannedMigrations[1].MigrationPatch.Name, Equals, "0003_00")
 	c.Assert(plannedMigrations[1].Queries[0], Equals, down)
-	c.Assert(plannedMigrations[2].Migration.Id, Equals, "2")
+	c.Assert(plannedMigrations[2].MigrationPatch.Name, Equals, "0002_00")
 	c.Assert(plannedMigrations[2].Queries[0], Equals, down)
 }
 
-func (s *SqliteMigrateSuite) TestLess(c *C) {
-	c.Assert((Migration{Id: "1"}).Less(&Migration{Id: "2"}), Equals, true)           // 1 less than 2
-	c.Assert((Migration{Id: "2"}).Less(&Migration{Id: "1"}), Equals, false)          // 2 not less than 1
-	c.Assert((Migration{Id: "1"}).Less(&Migration{Id: "a"}), Equals, true)           // 1 less than a
-	c.Assert((Migration{Id: "a"}).Less(&Migration{Id: "1"}), Equals, false)          // a not less than 1
-	c.Assert((Migration{Id: "a"}).Less(&Migration{Id: "a"}), Equals, false)          // a not less than a
-	c.Assert((Migration{Id: "1-a"}).Less(&Migration{Id: "1-b"}), Equals, true)       // 1-a less than 1-b
-	c.Assert((Migration{Id: "1-b"}).Less(&Migration{Id: "1-a"}), Equals, false)      // 1-b not less than 1-a
-	c.Assert((Migration{Id: "1"}).Less(&Migration{Id: "10"}), Equals, true)          // 1 less than 10
-	c.Assert((Migration{Id: "10"}).Less(&Migration{Id: "1"}), Equals, false)         // 10 not less than 1
-	c.Assert((Migration{Id: "1_foo"}).Less(&Migration{Id: "10_bar"}), Equals, true)  // 1_foo not less than 1
-	c.Assert((Migration{Id: "10_bar"}).Less(&Migration{Id: "1_foo"}), Equals, false) // 10 not less than 1
+func (s *SqliteMigrateSuite) TestLessPatch(c *C) {
+	c.Assert((MigrationPatch{VerInt: 1, PatchInt: 0}).Less(&MigrationPatch{VerInt: 2, PatchInt: 0}), Equals, true) // 1 less than 2
+	c.Assert((MigrationPatch{VerInt: 2}).Less(&MigrationPatch{VerInt: 2}), Equals, false)                          // 2 not less than 1
+	c.Assert((MigrationPatch{VerInt: 1}).Less(&MigrationPatch{Name: "a"}), Equals, false)                          // a(0) less than 1
+	c.Assert((MigrationPatch{Name: "a"}).Less(&MigrationPatch{Name: "1"}), Equals, false)                          // a not less than 1
+	c.Assert((MigrationPatch{Name: "a"}).Less(&MigrationPatch{Name: "a"}), Equals, false)                          // a not less than a
+	c.Assert((MigrationPatch{Name: "1-a"}).Less(&MigrationPatch{Name: "1-b"}), Equals, true)                       // 1-a less than 1-b
+	c.Assert((MigrationPatch{Name: "1-b"}).Less(&MigrationPatch{Name: "1-a"}), Equals, false)                      // 1-b not less than 1-a
+	c.Assert((MigrationPatch{Name: "1"}).Less(&MigrationPatch{Name: "10"}), Equals, true)                          // 1 less than 10
+	c.Assert((MigrationPatch{Name: "10"}).Less(&MigrationPatch{Name: "1"}), Equals, false)                         // 10 not less than 1
 	// 20160126_1100 less than 20160126_1200
-	c.Assert((Migration{Id: "20160126_1100"}).
-		Less(&Migration{Id: "20160126_1200"}), Equals, true)
+	c.Assert((MigrationPatch{VerInt: 20160126, PatchInt: 1100}).
+		Less(&MigrationPatch{VerInt: 20160126, PatchInt: 1200}), Equals, true)
 	// 20160126_1200 not less than 20160126_1100
-	c.Assert((Migration{Id: "20160126_1200"}).
-		Less(&Migration{Id: "20160126_1100"}), Equals, false)
-
+	c.Assert((MigrationPatch{VerInt: 20160126, PatchInt: 1200}).
+		Less(&MigrationPatch{VerInt: 20160126, PatchInt: 1100}), Equals, false)
 }
 
-func (s *SqliteMigrateSuite) TestPlanMigrationWithUnknownDatabaseMigrationApplied(c *C) {
+func (s *SqliteMigrateSuite) TestPlanMigrationWithUnknownDatabaseMigrationAppliedPatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: []*Migration{
-			&Migration{
-				Id:   "1_create_table.sql",
-				Up:   []string{"CREATE TABLE people (id int)"},
-				Down: []string{"DROP TABLE people"},
-			},
-			&Migration{
-				Id:   "2_alter_table.sql",
-				Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
-				Down: []string{"SELECT 0"}, // Not really supported
-			},
-			&Migration{
-				Id:   "10_add_last_name.sql",
-				Up:   []string{"ALTER TABLE people ADD COLUMN last_name text"},
-				Down: []string{"ALTER TABLE people DROP COLUMN last_name"},
-			},
+		MigrationsPatch: []*MigrationPatch{{
+			Name: "0001_00_create_table.sql",
+			Up:   []string{"CREATE TABLE people (id int)"},
+			Down: []string{"DROP TABLE people"},
+		}, {
+			Name: "0002_00_alter_table.sql",
+			Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
+			Down: []string{"SELECT 0"}, // Not really supported
+		}, {
+			Name: "0010_00_add_last_name.sql",
+			Up:   []string{"ALTER TABLE people ADD COLUMN last_name text"},
+			Down: []string{"ALTER TABLE people DROP COLUMN last_name"},
+		},
 		},
 	}
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
@@ -499,8 +470,8 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithUnknownDatabaseMigrationApplie
 
 	// Note that migration 10_add_last_name.sql is missing from the new migrations source
 	// so it is considered an "unknown" migration for the planner.
-	migrations.Migrations = append(migrations.Migrations[:2], &Migration{
-		Id:   "10_add_middle_name.sql",
+	migrations.MigrationsPatch = append(migrations.MigrationsPatch[:2], &MigrationPatch{
+		Name: "0009_00_add_middle_name.sql",
 		Up:   []string{"ALTER TABLE people ADD COLUMN middle_name text"},
 		Down: []string{"ALTER TABLE people DROP COLUMN middle_name"},
 	})
@@ -516,24 +487,21 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithUnknownDatabaseMigrationApplie
 	c.Assert(err, FitsTypeOf, &PlanError{})
 }
 
-func (s *SqliteMigrateSuite) TestPlanMigrationWithIgnoredUnknownDatabaseMigrationApplied(c *C) {
+func (s *SqliteMigrateSuite) TestPlanMigrationWithIgnoredUnknownDatabaseMigrationAppliedPatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: []*Migration{
-			&Migration{
-				Id:   "1_create_table.sql",
-				Up:   []string{"CREATE TABLE people (id int)"},
-				Down: []string{"DROP TABLE people"},
-			},
-			&Migration{
-				Id:   "2_alter_table.sql",
-				Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
-				Down: []string{"SELECT 0"}, // Not really supported
-			},
-			&Migration{
-				Id:   "10_add_last_name.sql",
-				Up:   []string{"ALTER TABLE people ADD COLUMN last_name text"},
-				Down: []string{"ALTER TABLE people DROP COLUMN last_name"},
-			},
+		MigrationsPatch: []*MigrationPatch{{
+			Name: "0001_00_create_table.sql",
+			Up:   []string{"CREATE TABLE people (id int)"},
+			Down: []string{"DROP TABLE people"},
+		}, {
+			Name: "0002_00_alter_table.sql",
+			Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
+			Down: []string{"SELECT 0"}, // Not really supported
+		}, {
+			Name: "0010_00_add_last_name.sql",
+			Up:   []string{"ALTER TABLE people ADD COLUMN last_name text"},
+			Down: []string{"ALTER TABLE people DROP COLUMN last_name"},
+		},
 		},
 	}
 	SetIgnoreUnknown(true)
@@ -543,8 +511,8 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithIgnoredUnknownDatabaseMigratio
 
 	// Note that migration 10_add_last_name.sql is missing from the new migrations source
 	// so it is considered an "unknown" migration for the planner.
-	migrations.Migrations = append(migrations.Migrations[:2], &Migration{
-		Id:   "10_add_middle_name.sql",
+	migrations.MigrationsPatch = append(migrations.MigrationsPatch[:2], &MigrationPatch{
+		Name: "0009_00_add_middle_name.sql",
 		Up:   []string{"ALTER TABLE people ADD COLUMN middle_name text"},
 		Down: []string{"ALTER TABLE people DROP COLUMN middle_name"},
 	})
@@ -559,9 +527,9 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithIgnoredUnknownDatabaseMigratio
 
 // TestExecWithUnknownMigrationInDatabase makes sure that problems found with planning the
 // migrations are propagated and returned by Exec.
-func (s *SqliteMigrateSuite) TestExecWithUnknownMigrationInDatabase(c *C) {
+func (s *SqliteMigrateSuite) TestExecWithUnknownMigrationInDatabasePatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: sqliteMigrations[:2],
+		MigrationsPatch: sqliteMigrationsPatch[:2],
 	}
 
 	// Executes two migrations
@@ -570,20 +538,18 @@ func (s *SqliteMigrateSuite) TestExecWithUnknownMigrationInDatabase(c *C) {
 	c.Assert(n, Equals, 2)
 
 	// Then create a new migration source with one of the migrations missing
-	var newSqliteMigrations = []*Migration{
-		&Migration{
-			Id:   "124_other",
-			Up:   []string{"ALTER TABLE people ADD COLUMN middle_name text"},
-			Down: []string{"ALTER TABLE people DROP COLUMN middle_name"},
-		},
-		&Migration{
-			Id:   "125",
-			Up:   []string{"ALTER TABLE people ADD COLUMN age int"},
-			Down: []string{"ALTER TABLE people DROP COLUMN age"},
-		},
+	var newSqliteMigrations = []*MigrationPatch{{
+		Name: "0124_01_other.sql",
+		Up:   []string{"ALTER TABLE people ADD COLUMN middle_name text"},
+		Down: []string{"ALTER TABLE people DROP COLUMN middle_name"},
+	}, {
+		Name: "0125_00_other.sql",
+		Up:   []string{"ALTER TABLE people ADD COLUMN age int"},
+		Down: []string{"ALTER TABLE people DROP COLUMN age"},
+	},
 	}
 	migrations = &MemoryMigrationSource{
-		Migrations: append(sqliteMigrations[:1], newSqliteMigrations...),
+		MigrationsPatch: append(sqliteMigrationsPatch[:1], newSqliteMigrations...),
 	}
 
 	n, err = Exec(s.Db, "sqlite3", migrations, Up)
@@ -599,9 +565,9 @@ func (s *SqliteMigrateSuite) TestExecWithUnknownMigrationInDatabase(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func (s *SqliteMigrateSuite) TestRunMigrationObjDefaultTable(c *C) {
+func (s *SqliteMigrateSuite) TestRunMigrationObjDefaultTablePatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: sqliteMigrations[:1],
+		MigrationsPatch: sqliteMigrationsPatch[:1],
 	}
 
 	ms := MigrationSet{}
@@ -624,9 +590,9 @@ func (s *SqliteMigrateSuite) TestRunMigrationObjDefaultTable(c *C) {
 	c.Assert(n, Equals, 0)
 }
 
-func (s *SqliteMigrateSuite) TestRunMigrationObjOtherTable(c *C) {
+func (s *SqliteMigrateSuite) TestRunMigrationObjOtherTablePatch(c *C) {
 	migrations := &MemoryMigrationSource{
-		Migrations: sqliteMigrations[:1],
+		MigrationsPatch: sqliteMigrationsPatch[:1],
 	}
 
 	ms := MigrationSet{TableName: "other_migrations"}
@@ -646,5 +612,32 @@ func (s *SqliteMigrateSuite) TestRunMigrationObjOtherTable(c *C) {
 	// Shouldn't apply migration again
 	n, err = ms.Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
+	c.Assert(n, Equals, 0)
+}
+
+// TestErrorFromatMingrationName return error format
+func (s *SqliteMigrateSuite) TestErrorFormatMigrationName(c *C) {
+	migrations := &MemoryMigrationSource{
+		MigrationsPatch: []*MigrationPatch{
+			{
+				Name: "0124_other.sql",
+				Up:   []string{"ALTER TABLE people ADD COLUMN middle_name text"},
+				Down: []string{"ALTER TABLE people DROP COLUMN middle_name"},
+			},
+		},
+	}
+
+	// Executes two migrations
+	n, err := Exec(s.Db, "sqlite3", migrations, Up)
+	fmt.Println("err", err)
+	c.Assert(err, Not(IsNil))
+	c.Assert(n, Equals, 0)
+
+	migrations.MigrationsPatch[0].Name = "0124_00"
+
+	// Executes two migrations
+	n, err = Exec(s.Db, "sqlite3", migrations, Up)
+	fmt.Println("err", err)
+	c.Assert(err, Not(IsNil))
 	c.Assert(n, Equals, 0)
 }

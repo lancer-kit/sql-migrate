@@ -64,7 +64,7 @@ func (c *StatusCommand) Run(args []string) int {
 		return 1
 	}
 
-	records, err := migrate.GetMigrationRecords(db, dialect)
+	records, err := migrate.GetMigrationPatchRecords(db, dialect)
 	if err != nil {
 		ui.Error(err.Error())
 		return 1
