@@ -731,7 +731,7 @@ func (ms MigrationSet) GetMigrationRecords(db *sql.DB, dialect string) ([]*Migra
 	}
 
 	var records []*MigrationRecord
-	query := fmt.Sprintf("SELECT * FROM %s ORDER BY ver ASC", dbMap.Dialect.QuotedTableForQuery(ms.SchemaName, ms.getTableName()))
+	query := fmt.Sprintf("SELECT * FROM %s ORDER BY id ASC", dbMap.Dialect.QuotedTableForQuery(ms.SchemaName, ms.getTableName()))
 	_, err = dbMap.Select(&records, query)
 	if err != nil {
 		return nil, err
@@ -770,7 +770,7 @@ Check https://github.com/go-sql-driver/mysql#parsetime for more info.`)
 	dbMap := &gorp.DbMap{Db: db, Dialect: d}
 	var table *gorp.TableMap
 	if ms.EnablePatchMode {
-		table = dbMap.AddTableWithNameAndSchema(MigrationRecord{}, ms.SchemaName, ms.getTableName()).
+		table = dbMap.AddTableWithNameAndSchema(MigrationPatchRecord{}, ms.SchemaName, ms.getTableName()).
 			SetKeys(false, "ver")
 	} else {
 		table = dbMap.AddTableWithNameAndSchema(MigrationRecord{}, ms.SchemaName, ms.getTableName()).

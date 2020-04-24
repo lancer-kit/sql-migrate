@@ -1,7 +1,6 @@
 package migrate
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gobuffalo/packr/v2"
@@ -21,6 +20,7 @@ var sqliteMigrationsPatch = []*MigrationPatch{{
 }
 
 func (s *SqliteMigrateSuite) TestRunMigrationPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: sqliteMigrationsPatch[:1],
 	}
@@ -41,8 +41,9 @@ func (s *SqliteMigrateSuite) TestRunMigrationPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestRunMigrationEscapeTablePatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
-		MigrationPatchs: sqliteMigrationsPatch[:1],
+		MigrationsPatch: sqliteMigrationsPatch[:1],
 	}
 
 	SetTable(`my migrations`)
@@ -54,6 +55,7 @@ func (s *SqliteMigrateSuite) TestRunMigrationEscapeTablePatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestMigrateMultiplePatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: sqliteMigrationsPatch[:2],
 	}
@@ -69,6 +71,7 @@ func (s *SqliteMigrateSuite) TestMigrateMultiplePatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestMigrateIncrementalPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: sqliteMigrationsPatch[:1],
 	}
@@ -92,14 +95,15 @@ func (s *SqliteMigrateSuite) TestMigrateIncrementalPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestFileMigratePatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &FileMigrationSource{
-		Dir: "test-migrations",
+		Dir: "test-migrations-patch",
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 2)
+	c.Assert(n, Equals, 5)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -108,14 +112,15 @@ func (s *SqliteMigrateSuite) TestFileMigratePatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestHttpFileSystemMigratePatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &HttpFileSystemMigrationSource{
-		FileSystem: http.Dir("test-migrations"),
+		FileSystem: http.Dir("test-migrations-patch"),
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 2)
+	c.Assert(n, Equals, 5)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -123,18 +128,19 @@ func (s *SqliteMigrateSuite) TestHttpFileSystemMigratePatch(c *C) {
 	c.Assert(id, Equals, int64(1))
 }
 
-//go:generate go-bindata --ignore .+\.go$ -pkg migrate -o bindata_test.go ./test-migrations
+//go:generate go-bindata --ignore .+\.go$ -pkg migrate -o bindata_test.go ./...
 func (s *SqliteMigrateSuite) TestAssetMigratePatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &AssetMigrationSource{
 		Asset:    Asset,
 		AssetDir: AssetDir,
-		Dir:      "test-migrations",
+		Dir:      "test-migrations-patch",
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 2)
+	c.Assert(n, Equals, 5)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -143,14 +149,15 @@ func (s *SqliteMigrateSuite) TestAssetMigratePatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestPackrMigratePatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &PackrMigrationSource{
-		Box: packr.New("migrations", "test-migrations"),
+		Box: packr.New("migrations", "test-migrations-patch"),
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 2)
+	c.Assert(n, Equals, 5)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -159,15 +166,16 @@ func (s *SqliteMigrateSuite) TestPackrMigratePatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestPackrMigrateDirPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &PackrMigrationSource{
 		Box: packr.NewBox("."),
-		Dir: "./test-migrations/",
+		Dir: "./test-migrations-patch/",
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 2)
+	c.Assert(n, Equals, 5)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -176,8 +184,9 @@ func (s *SqliteMigrateSuite) TestPackrMigrateDirPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestMigrateMaxPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &FileMigrationSource{
-		Dir: "test-migrations",
+		Dir: "test-migrations-patch",
 	}
 
 	// Executes one migration
@@ -191,13 +200,14 @@ func (s *SqliteMigrateSuite) TestMigrateMaxPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestMigrateDownPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &FileMigrationSource{
-		Dir: "test-migrations",
+		Dir: "test-migrations-patch",
 	}
 
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 2)
+	c.Assert(n, Equals, 5)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -215,9 +225,9 @@ func (s *SqliteMigrateSuite) TestMigrateDownPatch(c *C) {
 	c.Assert(id, Equals, int64(0))
 
 	// Remove the table.
-	n, err = ExecMax(s.Db, "sqlite3", migrations, Down, 1)
+	n, err = ExecMax(s.Db, "sqlite3", migrations, Down, 0)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 1)
+	c.Assert(n, Equals, 4)
 
 	// Cannot query it anymore
 	_, err = s.DbMap.SelectInt("SELECT COUNT(*) FROM people")
@@ -230,13 +240,14 @@ func (s *SqliteMigrateSuite) TestMigrateDownPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestMigrateDownFullPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &FileMigrationSource{
-		Dir: "test-migrations",
+		Dir: "test-migrations-patch",
 	}
 
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 2)
+	c.Assert(n, Equals, 5)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -246,7 +257,7 @@ func (s *SqliteMigrateSuite) TestMigrateDownFullPatch(c *C) {
 	// Undo the last one
 	n, err = Exec(s.Db, "sqlite3", migrations, Down)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 2)
+	c.Assert(n, Equals, 5)
 
 	// Cannot query it anymore
 	_, err = s.DbMap.SelectInt("SELECT COUNT(*) FROM people")
@@ -259,6 +270,7 @@ func (s *SqliteMigrateSuite) TestMigrateDownFullPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestMigrateTransactionPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: []*MigrationPatch{
 			sqliteMigrationsPatch[0],
@@ -283,6 +295,7 @@ func (s *SqliteMigrateSuite) TestMigrateTransactionPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestPlanMigrationPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: []*MigrationPatch{
 			{
@@ -312,20 +325,21 @@ func (s *SqliteMigrateSuite) TestPlanMigrationPatch(c *C) {
 		Down: []string{"ALTER TABLE people DROP COLUMN middle_name"},
 	})
 
-	plannedMigrations, _, err := PlanMigration(s.Db, "sqlite3", migrations, Up, 0)
+	plannedMigrations, _, err := PlanMigrationPatch(s.Db, "sqlite3", migrations, Up, 0)
 	c.Assert(err, IsNil)
 	c.Assert(plannedMigrations, HasLen, 1)
-	c.Assert(plannedMigrations[0].Migration, Equals, migrations.Migrations[3])
+	c.Assert(plannedMigrations[0].MigrationPatch, Equals, migrations.MigrationsPatch[3])
 
-	plannedMigrations, _, err = PlanMigration(s.Db, "sqlite3", migrations, Down, 0)
+	plannedMigrations, _, err = PlanMigrationPatch(s.Db, "sqlite3", migrations, Down, 0)
 	c.Assert(err, IsNil)
 	c.Assert(plannedMigrations, HasLen, 3)
-	c.Assert(plannedMigrations[0].Migration, Equals, migrations.Migrations[2])
-	c.Assert(plannedMigrations[1].Migration, Equals, migrations.Migrations[1])
-	c.Assert(plannedMigrations[2].Migration, Equals, migrations.Migrations[0])
+	c.Assert(plannedMigrations[0].MigrationPatch, Equals, migrations.MigrationsPatch[2])
+	c.Assert(plannedMigrations[1].MigrationPatch, Equals, migrations.MigrationsPatch[1])
+	c.Assert(plannedMigrations[2].MigrationPatch, Equals, migrations.MigrationsPatch[0])
 }
 
 func (s *SqliteMigrateSuite) TestSkipMigrationPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: []*MigrationPatch{{
 			Name: "0001_00_create_table.sql",
@@ -342,7 +356,7 @@ func (s *SqliteMigrateSuite) TestSkipMigrationPatch(c *C) {
 		},
 		},
 	}
-	n, err := SkipMax(s.Db, "sqlite3", migrations, Up, 0)
+	n, err := SkipMaxPatch(s.Db, "sqlite3", migrations, Up, 0)
 	// there should be no errors
 	c.Assert(err, IsNil)
 	// we should have detected and skipped 3 migrations
@@ -361,15 +375,16 @@ func (s *SqliteMigrateSuite) TestSkipMigrationPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestPlanMigrationWithHolesPatch(c *C) {
+	EnablePatchMode(true)
 	up := "SELECT 0"
 	down := "SELECT 1"
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: []*MigrationPatch{{
-			Name: "0001_00",
+			Name: "0001_00_name.sql",
 			Up:   []string{up},
 			Down: []string{down},
 		}, {
-			Name: "0003_00",
+			Name: "0003_00_name.sql",
 			Up:   []string{up},
 			Down: []string{down},
 		},
@@ -380,19 +395,19 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithHolesPatch(c *C) {
 	c.Assert(n, Equals, 2)
 
 	migrations.MigrationsPatch = append(migrations.MigrationsPatch, &MigrationPatch{
-		Name: "0002_00",
+		Name: "0002_00_name.sql",
 		Up:   []string{up},
 		Down: []string{down},
 	})
 
 	migrations.MigrationsPatch = append(migrations.MigrationsPatch, &MigrationPatch{
-		Name: "0004_00",
+		Name: "0004_00_name.sql",
 		Up:   []string{up},
 		Down: []string{down},
 	})
 
 	migrations.MigrationsPatch = append(migrations.MigrationsPatch, &MigrationPatch{
-		Name: "0005_00",
+		Name: "0005_00_name.sql",
 		Up:   []string{up},
 		Down: []string{down},
 	})
@@ -401,31 +416,31 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithHolesPatch(c *C) {
 	plannedMigrations, _, err := PlanMigrationPatch(s.Db, "sqlite3", migrations, Up, 0)
 	c.Assert(err, IsNil)
 	c.Assert(plannedMigrations, HasLen, 3)
-	c.Assert(plannedMigrations[0].MigrationPatch.Name, Equals, "0002_00")
+	c.Assert(plannedMigrations[0].MigrationPatch.Name, Equals, "0002_00_name.sql")
 	c.Assert(plannedMigrations[0].Queries[0], Equals, up)
-	c.Assert(plannedMigrations[1].MigrationPatch.Name, Equals, "0004_00")
+	c.Assert(plannedMigrations[1].MigrationPatch.Name, Equals, "0004_00_name.sql")
 	c.Assert(plannedMigrations[1].Queries[0], Equals, up)
-	c.Assert(plannedMigrations[2].MigrationPatch.Name, Equals, "0005_00")
+	c.Assert(plannedMigrations[2].MigrationPatch.Name, Equals, "0005_00_name.sql")
 	c.Assert(plannedMigrations[2].Queries[0], Equals, up)
 
 	// first catch up to current target state 123, then migrate down 1 step to 12
 	plannedMigrations, _, err = PlanMigrationPatch(s.Db, "sqlite3", migrations, Down, 1)
 	c.Assert(err, IsNil)
 	c.Assert(plannedMigrations, HasLen, 2)
-	c.Assert(plannedMigrations[0].MigrationPatch.Name, Equals, "0002_00")
+	c.Assert(plannedMigrations[0].MigrationPatch.Name, Equals, "0002_00_name.sql")
 	c.Assert(plannedMigrations[0].Queries[0], Equals, up)
-	c.Assert(plannedMigrations[1].MigrationPatch.Name, Equals, "0003_00")
+	c.Assert(plannedMigrations[1].MigrationPatch.Name, Equals, "0003_00_name.sql")
 	c.Assert(plannedMigrations[1].Queries[0], Equals, down)
 
 	// first catch up to current target state 123, then migrate down 2 steps to 1
 	plannedMigrations, _, err = PlanMigrationPatch(s.Db, "sqlite3", migrations, Down, 2)
 	c.Assert(err, IsNil)
 	c.Assert(plannedMigrations, HasLen, 3)
-	c.Assert(plannedMigrations[0].MigrationPatch.Name, Equals, "0002_00")
+	c.Assert(plannedMigrations[0].MigrationPatch.Name, Equals, "0002_00_name.sql")
 	c.Assert(plannedMigrations[0].Queries[0], Equals, up)
-	c.Assert(plannedMigrations[1].MigrationPatch.Name, Equals, "0003_00")
+	c.Assert(plannedMigrations[1].MigrationPatch.Name, Equals, "0003_00_name.sql")
 	c.Assert(plannedMigrations[1].Queries[0], Equals, down)
-	c.Assert(plannedMigrations[2].MigrationPatch.Name, Equals, "0002_00")
+	c.Assert(plannedMigrations[2].MigrationPatch.Name, Equals, "0002_00_name.sql")
 	c.Assert(plannedMigrations[2].Queries[0], Equals, down)
 }
 
@@ -448,6 +463,7 @@ func (s *SqliteMigrateSuite) TestLessPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestPlanMigrationWithUnknownDatabaseMigrationAppliedPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: []*MigrationPatch{{
 			Name: "0001_00_create_table.sql",
@@ -476,18 +492,19 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithUnknownDatabaseMigrationApplie
 		Down: []string{"ALTER TABLE people DROP COLUMN middle_name"},
 	})
 
-	_, _, err = PlanMigration(s.Db, "sqlite3", migrations, Up, 0)
+	_, _, err = PlanMigrationPatch(s.Db, "sqlite3", migrations, Up, 0)
 	c.Assert(err, NotNil, Commentf("Up migrations should not have been applied when there "+
 		"is an unknown migration in the database"))
 	c.Assert(err, FitsTypeOf, &PlanError{})
 
-	_, _, err = PlanMigration(s.Db, "sqlite3", migrations, Down, 0)
+	_, _, err = PlanMigrationPatch(s.Db, "sqlite3", migrations, Down, 0)
 	c.Assert(err, NotNil, Commentf("Down migrations should not have been applied when there "+
 		"is an unknown migration in the database"))
 	c.Assert(err, FitsTypeOf, &PlanError{})
 }
 
 func (s *SqliteMigrateSuite) TestPlanMigrationWithIgnoredUnknownDatabaseMigrationAppliedPatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: []*MigrationPatch{{
 			Name: "0001_00_create_table.sql",
@@ -501,8 +518,7 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithIgnoredUnknownDatabaseMigratio
 			Name: "0010_00_add_last_name.sql",
 			Up:   []string{"ALTER TABLE people ADD COLUMN last_name text"},
 			Down: []string{"ALTER TABLE people DROP COLUMN last_name"},
-		},
-		},
+		}},
 	}
 	SetIgnoreUnknown(true)
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
@@ -517,10 +533,10 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithIgnoredUnknownDatabaseMigratio
 		Down: []string{"ALTER TABLE people DROP COLUMN middle_name"},
 	})
 
-	_, _, err = PlanMigration(s.Db, "sqlite3", migrations, Up, 0)
+	_, _, err = PlanMigrationPatch(s.Db, "sqlite3", migrations, Up, 0)
 	c.Assert(err, IsNil)
 
-	_, _, err = PlanMigration(s.Db, "sqlite3", migrations, Down, 0)
+	_, _, err = PlanMigrationPatch(s.Db, "sqlite3", migrations, Down, 0)
 	c.Assert(err, IsNil)
 	SetIgnoreUnknown(false) // Make sure we are not breaking other tests as this is globaly set
 }
@@ -528,6 +544,7 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithIgnoredUnknownDatabaseMigratio
 // TestExecWithUnknownMigrationInDatabase makes sure that problems found with planning the
 // migrations are propagated and returned by Exec.
 func (s *SqliteMigrateSuite) TestExecWithUnknownMigrationInDatabasePatch(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: sqliteMigrationsPatch[:2],
 	}
@@ -570,7 +587,9 @@ func (s *SqliteMigrateSuite) TestRunMigrationObjDefaultTablePatch(c *C) {
 		MigrationsPatch: sqliteMigrationsPatch[:1],
 	}
 
-	ms := MigrationSet{}
+	ms := MigrationSet{
+		EnablePatchMode: true,
+	}
 	// Executes one migration
 	n, err := ms.Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
@@ -595,7 +614,10 @@ func (s *SqliteMigrateSuite) TestRunMigrationObjOtherTablePatch(c *C) {
 		MigrationsPatch: sqliteMigrationsPatch[:1],
 	}
 
-	ms := MigrationSet{TableName: "other_migrations"}
+	ms := MigrationSet{
+		TableName:       "other_migrations",
+		EnablePatchMode: true,
+	}
 	// Executes one migration
 	n, err := ms.Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
@@ -615,8 +637,9 @@ func (s *SqliteMigrateSuite) TestRunMigrationObjOtherTablePatch(c *C) {
 	c.Assert(n, Equals, 0)
 }
 
-// TestErrorFromatMingrationName return error format
+// TestErrorFormatMigrationName return error format
 func (s *SqliteMigrateSuite) TestErrorFormatMigrationName(c *C) {
+	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
 		MigrationsPatch: []*MigrationPatch{
 			{
@@ -629,7 +652,6 @@ func (s *SqliteMigrateSuite) TestErrorFormatMigrationName(c *C) {
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
-	fmt.Println("err", err)
 	c.Assert(err, Not(IsNil))
 	c.Assert(n, Equals, 0)
 
@@ -637,7 +659,6 @@ func (s *SqliteMigrateSuite) TestErrorFormatMigrationName(c *C) {
 
 	// Executes two migrations
 	n, err = Exec(s.Db, "sqlite3", migrations, Up)
-	fmt.Println("err", err)
 	c.Assert(err, Not(IsNil))
 	c.Assert(n, Equals, 0)
 }

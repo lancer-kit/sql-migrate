@@ -80,21 +80,19 @@ func (m MemoryMigrationSource) FindMigrationsPatch() ([]*MigrationPatch, error) 
 	// Make sure migrations are sorted. In order to make the MemoryMigrationSource safe for
 	// concurrent use we should not mutate it in place. So `FindMigrations` would sort a copy
 	// of the m.Migrations.
-	migrations := make([]*MigrationPatch, len(m.Migrations))
+	migrations := make([]*MigrationPatch, len(m.MigrationsPatch))
 	copy(migrations, m.MigrationsPatch)
-	if migSet.EnablePatchMode {
-		for _, migration := range migrations {
-			prefixMatches := numberPrefixPatchRegex.FindStringSubmatch(migration.Name)
-			if len(prefixMatches) < 3 {
-				return nil, fmt.Errorf("failed. Name migrations %s not format 0000_00_name.sql", migration.Name)
-			}
+	for _, migration := range migrations {
+		prefixMatches := numberPrefixPatchRegex.FindStringSubmatch(migration.Name)
+		if len(prefixMatches) < 3 {
+			return nil, fmt.Errorf("failed. Name migrations %s not format 0000_00_name.sql", migration.Name)
+		}
 
-			migration.Ver = prefixMatches[1]
-			migration.Patch = prefixMatches[2]
+		migration.Ver = prefixMatches[1]
+		migration.Patch = prefixMatches[2]
 
-			if err := migration.ParseName(); err != nil {
-				return nil, err
-			}
+		if err := migration.ParseName(); err != nil {
+			return nil, err
 		}
 	}
 	sort.Sort(byIdPatch(migrations))
@@ -230,7 +228,7 @@ func ParseMigrationPatch(nameFile string, r io.ReadSeeker) (*MigrationPatch, err
 		Name: nameFile,
 	}
 
-	prefixMatches := numberPrefixRegex.FindStringSubmatch(m.Name)
+	prefixMatches := numberPrefixPatchRegex.FindStringSubmatch(m.Name)
 	if len(prefixMatches) < 3 {
 		return nil, fmt.Errorf("failed. Name migrations %s not format 0000_00_name.sql", m.Name)
 	}
@@ -302,7 +300,7 @@ func (ms MigrationSet) ExecMaxPatch(db *sql.DB, dialect string, m MigrationSourc
 
 		switch dir {
 		case Up:
-			obj, err := executor.Get(MigrationRecord{}, migration.Ver)
+			obj, err := executor.Get(MigrationPatchRecord{}, migration.Ver)
 			if err != nil {
 				if trans, ok := executor.(*gorp.Transaction); ok {
 					_ = trans.Rollback()
@@ -495,7 +493,7 @@ func SkipMaxPatch(db *sql.DB, dialect string, m MigrationSource, dir MigrationDi
 			}
 		}
 
-		obj, err := executor.Get(MigrationRecord{}, migration.Ver)
+		obj, err := executor.Get(MigrationPatchRecord{}, migration.Ver)
 		if err != nil {
 			if trans, ok := executor.(*gorp.Transaction); ok {
 				_ = trans.Rollback()

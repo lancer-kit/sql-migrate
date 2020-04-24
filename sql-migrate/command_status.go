@@ -55,36 +55,102 @@ func (c *StatusCommand) Run(args []string) int {
 		return 1
 	}
 
+	var recordsPatch []*migrate.MigrationPatchRecord
+	records, err := migrate.GetMigrationRecords(db, dialect)
+	if err != nil {
+		recordsPatch, err = migrate.GetMigrationPatchRecords(db, dialect)
+		if err != nil {
+			ui.Error(err.Error())
+			return 1
+		}
+	}
+
 	source := migrate.FileMigrationSource{
 		Dir: env.Dir,
 	}
+
+	if records != nil {
+		err = c.showStatus(source, records)
+	} else {
+		err = c.showStatusPatch(source, recordsPatch)
+	}
+
+	if err != nil {
+		ui.Error(err.Error())
+		return 1
+	}
+
+	return 0
+}
+
+func (c *StatusCommand) showStatus(source migrate.FileMigrationSource, records []*migrate.MigrationRecord) error {
 	migrations, err := source.FindMigrations()
 	if err != nil {
-		ui.Error(err.Error())
-		return 1
+		return err
 	}
 
-	records, err := migrate.GetMigrationPatchRecords(db, dialect)
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"Migration", "Applied"})
+	table.SetColWidth(60)
+
+	rows := make(map[string]*statusRow)
+
+	for _, m := range migrations {
+		rows[m.Id] = &statusRow{
+			Id:       m.Id,
+			Migrated: false,
+		}
+	}
+
+	for _, r := range records {
+		if rows[r.Id] == nil {
+			ui.Warn(fmt.Sprintf("Could not find migration file: %v", r.Id))
+			continue
+		}
+
+		rows[r.Id].Migrated = true
+		rows[r.Id].AppliedAt = r.AppliedAt
+	}
+
+	for _, m := range migrations {
+		if rows[m.Id] != nil && rows[m.Id].Migrated {
+			table.Append([]string{
+				m.Id,
+				rows[m.Id].AppliedAt.String(),
+			})
+		} else {
+			table.Append([]string{
+				m.Id,
+				"no",
+			})
+		}
+	}
+
+	table.Render()
+
+	return nil
+}
+
+func (c *StatusCommand) showStatusPatch(source migrate.FileMigrationSource, records []*migrate.MigrationPatchRecord) error {
+	migrations, err := source.FindMigrationsPatch()
 	if err != nil {
-		ui.Error(err.Error())
-		return 1
+		return err
 	}
 
-	var existingMigrations []*statusRow
+	var existingMigrations []*statusRowPatch
 	for _, migrationRecord := range records {
-		em := &migrate.Migration{
+		em := &migrate.MigrationPatch{
 			Name:  migrationRecord.Name,
 			Ver:   migrationRecord.Ver,
 			Patch: migrationRecord.Patch,
 		}
 
 		if err := em.ParseName(); err != nil {
-			ui.Error(err.Error())
-			return 1
+			return err
 		}
-		existingMigrations = append(existingMigrations, &statusRow{
-			Migration: em,
-			AppliedAt: migrationRecord.CreatedAt,
+		existingMigrations = append(existingMigrations, &statusRowPatch{
+			MigrationPatch: em,
+			AppliedAt:      migrationRecord.CreatedAt,
 		})
 	}
 
@@ -93,7 +159,7 @@ func (c *StatusCommand) Run(args []string) int {
 	table.SetColWidth(60)
 
 	for _, m := range migrations {
-		var existMigration *statusRow
+		var existMigration *statusRowPatch
 		for _, existing := range existingMigrations {
 			if existing.VerInt == m.VerInt && existing.PatchInt >= m.PatchInt {
 				existMigration = existing
@@ -116,10 +182,16 @@ func (c *StatusCommand) Run(args []string) int {
 
 	table.Render()
 
-	return 0
+	return nil
 }
 
 type statusRow struct {
-	*migrate.Migration
+	Id        string
+	Migrated  bool
+	AppliedAt time.Time
+}
+
+type statusRowPatch struct {
+	*migrate.MigrationPatch
 	AppliedAt time.Time
 }
