@@ -6,9 +6,9 @@ import (
 )
 
 var toapplyMigrations = []*Migration{
-	&Migration{Name: "0001_00_abc", verInt: 1, patchInt: 0, Up: nil, Down: nil},
-	&Migration{Name: "0001_01_cde", verInt: 1, patchInt: 1, Up: nil, Down: nil},
-	&Migration{Name: "0002_00_efg", verInt: 2, patchInt: 0, Up: nil, Down: nil},
+	&Migration{Name: "0001_00_abc", VerInt: 1, PatchInt: 0, Up: nil, Down: nil},
+	&Migration{Name: "0001_01_cde", VerInt: 1, PatchInt: 1, Up: nil, Down: nil},
+	&Migration{Name: "0002_00_efg", VerInt: 2, PatchInt: 0, Up: nil, Down: nil},
 }
 
 type ToApplyMigrateSuite struct {
@@ -41,7 +41,7 @@ func (s *ToApplyMigrateSuite) TestGetDone(c *C) {
 	toApply := ToApply(toapplyMigrations, toapplyMigrations[2], Up)
 	c.Assert(toApply, HasLen, 0)
 
-	toApply = ToApply(toapplyMigrations, &Migration{Name:"0005_05_zzz", verInt: 4, patchInt: 0}, Up)
+	toApply = ToApply(toapplyMigrations, &Migration{Name:"0005_05_zzz", VerInt: 4, PatchInt: 0}, Up)
 	c.Assert(toApply, HasLen, 0)
 }
 
@@ -70,7 +70,7 @@ func (s *ToApplyMigrateSuite) TestDownAll(c *C) {
 	c.Assert(toApply[1], Equals, toapplyMigrations[1])
 	c.Assert(toApply[2], Equals, toapplyMigrations[0])
 
-	toApply = ToApply(toapplyMigrations, &Migration{Name:"0005_05_zzz", verInt: 4, patchInt: 0}, Down)
+	toApply = ToApply(toapplyMigrations, &Migration{Name:"0005_05_zzz", VerInt: 4, PatchInt: 0}, Down)
 	c.Assert(toApply, HasLen, 3)
 	c.Assert(toApply[0], Equals, toapplyMigrations[2])
 	c.Assert(toApply[1], Equals, toapplyMigrations[1])
@@ -79,16 +79,16 @@ func (s *ToApplyMigrateSuite) TestDownAll(c *C) {
 
 func (s *ToApplyMigrateSuite) TestAlphaNumericMigrations(c *C) {
 	var migrations = byId([]*Migration{
-		&Migration{Name: "0010_00_abc", verInt: 10, patchInt: 0, Up: nil, Down: nil},
-		&Migration{Name: "0001_00_abc", verInt: 1, patchInt: 0, Up: nil, Down: nil},
-		&Migration{Name: "0005_00_efg", verInt: 5, patchInt: 0, Up: nil, Down: nil},
-		&Migration{Name: "0002_00_cde", verInt: 2, patchInt: 0, Up: nil, Down: nil},
-		&Migration{Name: "0035_00_cde", verInt: 35, patchInt: 0, Up: nil, Down: nil},
+		&Migration{Name: "0010_00_abc", VerInt: 10, PatchInt: 0, Up: nil, Down: nil},
+		&Migration{Name: "0001_00_abc", VerInt: 1, PatchInt: 0, Up: nil, Down: nil},
+		&Migration{Name: "0005_00_efg", VerInt: 5, PatchInt: 0, Up: nil, Down: nil},
+		&Migration{Name: "0001_01_cde", VerInt: 1, PatchInt: 1, Up: nil, Down: nil},
+		&Migration{Name: "0035_00_cde", VerInt: 35, PatchInt: 0, Up: nil, Down: nil},
 	})
 
 	sort.Sort(migrations)
 
-	current := &Migration{Name: "0002_00_cde", verInt: 2, patchInt: 0, Up: nil, Down: nil}
+	current := &Migration{Name: "0001_01_cde", VerInt: 1, PatchInt: 1, Up: nil, Down: nil}
 
 	toApplyUp := ToApply(migrations, current, Up)
 	c.Assert(toApplyUp, HasLen, 3)
@@ -98,6 +98,6 @@ func (s *ToApplyMigrateSuite) TestAlphaNumericMigrations(c *C) {
 
 	toApplyDown := ToApply(migrations, current, Down)
 	c.Assert(toApplyDown, HasLen, 2)
-	c.Assert(toApplyDown[0].Name, Equals, "0002_00_cde")
+	c.Assert(toApplyDown[0].Name, Equals, "0001_01_cde")
 	c.Assert(toApplyDown[1].Name, Equals, "0001_00_abc")
 }

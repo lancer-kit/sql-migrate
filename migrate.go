@@ -40,8 +40,6 @@ type MigrationSet struct {
 	IgnoreUnknown bool
 }
 
-var errorWrongFormat = errors.New("failed. Name migrations not format 0000_00_name.sql")
-
 var migSet = MigrationSet{}
 
 // NewMigrationSet returns a parametrized Migration object
@@ -52,7 +50,7 @@ func (ms MigrationSet) getTableName() string {
 	return ms.TableName
 }
 
-var numberPrefixRegex = regexp.MustCompile(`^(\d+)_(\d+).*$`)
+var numberPrefixRegex = regexp.MustCompile(`^(\d+)_(\d+)_.+$`)
 
 // PlanError happens where no migration plan could be created between the sets
 // of already applied migrations and the currently found. For example, when the database
@@ -217,6 +215,19 @@ func (m MemoryMigrationSource) FindMigrations() ([]*Migration, error) {
 	// of the m.Migrations.
 	migrations := make([]*Migration, len(m.Migrations))
 	copy(migrations, m.Migrations)
+	for _, migration := range migrations {
+		prefixMatches := numberPrefixRegex.FindStringSubmatch(migration.Name)
+		if len(prefixMatches) < 3 {
+			return nil, fmt.Errorf("failed. Name migrations %s not format 0000_00_name.sql", migration.Name)
+		}
+
+		migration.Ver = prefixMatches[1]
+		migration.Patch = prefixMatches[2]
+
+		if err := migration.ParseName(); err != nil {
+			return nil, err
+		}
+	}
 	sort.Sort(byId(migrations))
 	return migrations, nil
 }
@@ -398,7 +409,7 @@ func ParseMigration(nameFile string, r io.ReadSeeker) (*Migration, error) {
 
 	prefixMatches := numberPrefixRegex.FindStringSubmatch(m.Name)
 	if len(prefixMatches) < 3 {
-		return nil, errorWrongFormat
+		return nil, fmt.Errorf("failed. Name migrations %s not format 0000_00_name.sql", m.Name)
 	}
 
 	m.Ver = prefixMatches[1]
