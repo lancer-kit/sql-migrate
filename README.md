@@ -196,7 +196,7 @@ Set up a source of migrations, this can be from memory, from a set of files, fro
 migrations := &migrate.MemoryMigrationSource{
     Migrations: []*migrate.Migration{
         &migrate.Migration{
-            Name:   "0123_00_name",
+            Id:   "123",
             Up:   []string{"CREATE TABLE people (id int)"},
             Down: []string{"DROP TABLE people"},
         },
@@ -290,8 +290,7 @@ DROP TABLE people;
 
 The order in which migrations are applied is defined through the filename: sql-migrate will sort migrations based on their name. It's recommended to use an increasing version number or a timestamp as the first part of the filename.
 
-Normally each migration is run within a transaction in order to guarantee that it is fully atomic. However some SQL commands (for example creating an index concurrently in PostgreSQL) cannot be executed inside a transaction. In order to execute such a command in a migration, the migration can be run using the notransaction option:
-
+Normally each migration is run within a transaction in order to guarantee that it is fully atomic. However some SQL commands (for example creating an index concurrently in PostgreSQL) cannot be executed inside a transaction. In order to execute such a command in a migration, the migration can be run using the `notransaction` option:
 ```sql
 -- +migrate Up notransaction
 CREATE UNIQUE INDEX people_unique_id_idx CONCURRENTLY ON people (id);
