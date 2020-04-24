@@ -11,6 +11,7 @@ Key features:
 	* Atomic migrations
 	* Up/down migrations to allow rollback
 	* Supports multiple database types in one project
+	* Patch migration for major version
 
 Installation
 
@@ -182,6 +183,16 @@ Normally each migration is run within a transaction in order to guarantee that i
 
 	-- +migrate Down
 	DROP INDEX people_unique_id_idx;
+
+Patching migration
+
+For Enable Patching migrations use function EnablePatchMode(true)
+
+This mode required to use the following migration name format: 0000_00_name.sql (^(\d+)_(\d+)_.+$) and new structure migrations table.
+
+Recommended set new table name or delete old migration table SetTable("migrations")
+
+It is possible to delete the first versions of major migrations. For example, two files 0001_00_name.sql and 0001_01_name.sql can be merged into one file 0001_01_name.sql.
 
 Embedding migrations with packr
 

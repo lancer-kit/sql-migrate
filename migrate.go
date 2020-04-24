@@ -212,7 +212,7 @@ type MigrationSource interface {
 	// The resulting slice of migrations should be sorted by Id.
 	FindMigrations() ([]*Migration, error)
 
-	// The resulting slice of migrations should be sorted by Id and format 0001_00_name.sql.
+	// The resulting slice of migrations should be sorted by version and patch with format 0001_00_name.sql.
 	FindMigrationsPatch() ([]*MigrationPatch, error)
 }
 

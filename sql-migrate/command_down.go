@@ -22,6 +22,7 @@ Options:
   -env="development"     Environment.
   -limit=1               Limit the number of migrations (0 = unlimited).
   -dryrun                Don't apply migrations, just print them.
+  -enablePatch           Enable patch versions
 
 `
 	return strings.TrimSpace(helpText)
@@ -34,18 +35,21 @@ func (c *DownCommand) Synopsis() string {
 func (c *DownCommand) Run(args []string) int {
 	var limit int
 	var dryrun bool
+	var enablePatch bool
 
 	cmdFlags := flag.NewFlagSet("down", flag.ContinueOnError)
 	cmdFlags.Usage = func() { ui.Output(c.Help()) }
 	cmdFlags.IntVar(&limit, "limit", 1, "Max number of migrations to apply.")
 	cmdFlags.BoolVar(&dryrun, "dryrun", false, "Don't apply migrations, just print them.")
+	cmdFlags.BoolVar(&enablePatch, "enablePatch", false, "Enable patch versions.")
 	ConfigFlags(cmdFlags)
 
 	if err := cmdFlags.Parse(args); err != nil {
 		return 1
 	}
 
-	err := ApplyMigrations(migrate.Down, dryrun, limit)
+	migrate.EnablePatchMode(enablePatch)
+	err := ApplyMigrations(migrate.Down, dryrun, enablePatch, limit)
 	if err != nil {
 		ui.Error(err.Error())
 		return 1

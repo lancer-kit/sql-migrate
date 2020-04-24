@@ -100,12 +100,12 @@ Use the `status` command to see the state of the applied migrations:
 
 ```bash
 $ sql-migrate status
-+---------------------+-----------------------------------------+
-|   MIGRATION         |                 APPLIED                 |
-+---------------------+-----------------------------------------+
-| 0001_00_initial.sql | 2014-09-13 08:19:06.788354925 +0000 UTC |
-| 0002_00_record.sql  | no                                      |
-+---------------------+-----------------------------------------+
++---------------+-----------------------------------------+
+|   MIGRATION   |                 APPLIED                 |
++---------------+-----------------------------------------+
+| 1_initial.sql | 2014-09-13 08:19:06.788354925 +0000 UTC |
+| 2_record.sql  | no                                      |
++---------------+-----------------------------------------+
 ```
 
 #### Running Test Integrations
@@ -288,11 +288,9 @@ DROP FUNCTION do_something();
 DROP TABLE people;
 ```
 
-The order in which migrations are applied is defined through the filename: sql-migrate will sort migrations based on their name. Required to use the following migration name format: 0000_00_name.sql (^(\d+)_(\d+)_.+$). It's recommended to use an increasing version number or a timestamp as the part of major or patch version. 
+The order in which migrations are applied is defined through the filename: sql-migrate will sort migrations based on their name. It's recommended to use an increasing version number or a timestamp as the first part of the filename.
 
-It is possible to delete the first versions of major migrations. For example, two files 0001_00_name.sql and 0001_01_name.sql can be merged into one file 0001_01_name.sql.
-
-Normally each migration is run within a transaction in order to guarantee that it is fully atomic. However some SQL commands (for example creating an index concurrently in PostgreSQL) cannot be executed inside a transaction. In order to execute such a command in a migration, the migration can be run using the `notransaction` option:
+Normally each migration is run within a transaction in order to guarantee that it is fully atomic. However some SQL commands (for example creating an index concurrently in PostgreSQL) cannot be executed inside a transaction. In order to execute such a command in a migration, the migration can be run using the notransaction option:
 
 ```sql
 -- +migrate Up notransaction
@@ -301,6 +299,22 @@ CREATE UNIQUE INDEX people_unique_id_idx CONCURRENTLY ON people (id);
 -- +migrate Down
 DROP INDEX people_unique_id_idx;
 ```
+
+## Patching migration
+
+For Enable Patching migrations use function
+```go
+EnablePatchMode(true)
+```
+
+This mode required to use the following migration name format: 0000_00_name.sql (^(\d+)_(\d+)_.+$) and new structure migrations table.
+
+Recommended set new table name or delete old migration table
+```go
+SetTable("migrations")
+```
+
+It is possible to delete the first versions of major migrations. For example, two files 0001_00_name.sql and 0001_01_name.sql can be merged into one file 0001_01_name.sql.
 
 ## Embedding migrations with [packr](https://github.com/gobuffalo/packr)
 

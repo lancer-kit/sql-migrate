@@ -9,15 +9,26 @@ import (
 )
 
 var sqliteMigrationsPatch = []*MigrationPatch{{
-	Name: "0123_00_test.sql",
+	Name: "0001_00_initial.sql",
 	Up:   []string{"CREATE TABLE people (id int)"},
 	Down: []string{"DROP TABLE people"},
 }, {
-	Name: "0124_00_test.sql",
+	Name: "0002_00_second.sql",
+	Up:   []string{"CREATE TABLE balance (id int, balance int)"},
+	Down: []string{"DROP TABLE balance"},
+}, {
+	Name: "0003_42_second_patch.sql",
+	Up:   []string{"CREATE TABLE users (id int)"},
+	Down: []string{"DROP TABLE users"},
+}, {
+	Name: "0002_01_second_patch.sql",
+	Up:   []string{"CREATE TABLE deposit (id int, amount int)"},
+	Down: []string{"DROP TABLE deposit"},
+}, {
+	Name: "0004_00_alter_people.sql",
 	Up:   []string{"ALTER TABLE people ADD COLUMN first_name text"},
-	Down: []string{"SELECT 0"}, // Not really supported
-},
-}
+	Down: []string{"SELECT 0"},
+}}
 
 func (s *SqliteMigrateSuite) TestRunMigrationPatch(c *C) {
 	EnablePatchMode(true)
@@ -40,30 +51,24 @@ func (s *SqliteMigrateSuite) TestRunMigrationPatch(c *C) {
 	c.Assert(n, Equals, 0)
 }
 
-func (s *SqliteMigrateSuite) TestRunMigrationEscapeTablePatch(c *C) {
-	EnablePatchMode(true)
-	migrations := &MemoryMigrationSource{
-		MigrationsPatch: sqliteMigrationsPatch[:1],
-	}
-
-	SetTable(`my migrations`)
-
-	// Executes one migration
-	n, err := Exec(s.Db, "sqlite3", migrations, Up)
-	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 1)
-}
-
 func (s *SqliteMigrateSuite) TestMigrateMultiplePatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
-		MigrationsPatch: sqliteMigrationsPatch[:2],
+		MigrationsPatch: sqliteMigrationsPatch[:5],
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 2)
+	c.Assert(n, Equals, 5)
+
+	// Can use table now
+	_, err = s.DbMap.Exec("SELECT * FROM balance")
+	c.Assert(err, IsNil)
+	_, err = s.DbMap.Exec("SELECT * FROM deposit")
+	c.Assert(err, IsNil)
+	_, err = s.DbMap.Exec("SELECT * FROM users")
+	c.Assert(err, IsNil)
 
 	// Can use column now
 	_, err = s.DbMap.Exec("SELECT first_name FROM people")
@@ -73,21 +78,21 @@ func (s *SqliteMigrateSuite) TestMigrateMultiplePatch(c *C) {
 func (s *SqliteMigrateSuite) TestMigrateIncrementalPatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &MemoryMigrationSource{
-		MigrationsPatch: sqliteMigrationsPatch[:1],
+		MigrationsPatch: sqliteMigrationsPatch[:2],
 	}
 
 	// Executes one migration
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 1)
+	c.Assert(n, Equals, 2)
 
 	// Execute a new migration
 	migrations = &MemoryMigrationSource{
-		MigrationsPatch: sqliteMigrationsPatch[:2],
+		MigrationsPatch: sqliteMigrationsPatch[:5],
 	}
 	n, err = Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 1)
+	c.Assert(n, Equals, 3)
 
 	// Can use column now
 	_, err = s.DbMap.Exec("SELECT first_name FROM people")
@@ -97,13 +102,13 @@ func (s *SqliteMigrateSuite) TestMigrateIncrementalPatch(c *C) {
 func (s *SqliteMigrateSuite) TestFileMigratePatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &FileMigrationSource{
-		Dir: "test-migrations-patch",
+		Dir: "test-migrations/patch",
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 5)
+	c.Assert(n, Equals, 2)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -114,13 +119,13 @@ func (s *SqliteMigrateSuite) TestFileMigratePatch(c *C) {
 func (s *SqliteMigrateSuite) TestHttpFileSystemMigratePatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &HttpFileSystemMigrationSource{
-		FileSystem: http.Dir("test-migrations-patch"),
+		FileSystem: http.Dir("test-migrations/patch"),
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 5)
+	c.Assert(n, Equals, 2)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -128,19 +133,19 @@ func (s *SqliteMigrateSuite) TestHttpFileSystemMigratePatch(c *C) {
 	c.Assert(id, Equals, int64(1))
 }
 
-//go:generate go-bindata --ignore .+\.go$ -pkg migrate -o bindata_test.go ./...
+//go:generate go-bindata --ignore .+\.go$ -pkg migrate -o bindata_test.go ./test-migrations/...
 func (s *SqliteMigrateSuite) TestAssetMigratePatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &AssetMigrationSource{
 		Asset:    Asset,
 		AssetDir: AssetDir,
-		Dir:      "test-migrations-patch",
+		Dir:      "test-migrations/patch",
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 5)
+	c.Assert(n, Equals, 2)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -151,13 +156,13 @@ func (s *SqliteMigrateSuite) TestAssetMigratePatch(c *C) {
 func (s *SqliteMigrateSuite) TestPackrMigratePatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &PackrMigrationSource{
-		Box: packr.New("migrations", "test-migrations-patch"),
+		Box: packr.New("migrations", "test-migrations/patch"),
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 5)
+	c.Assert(n, Equals, 2)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -169,13 +174,13 @@ func (s *SqliteMigrateSuite) TestPackrMigrateDirPatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &PackrMigrationSource{
 		Box: packr.NewBox("."),
-		Dir: "./test-migrations-patch/",
+		Dir: "./test-migrations/patch/",
 	}
 
 	// Executes two migrations
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 5)
+	c.Assert(n, Equals, 2)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -186,7 +191,7 @@ func (s *SqliteMigrateSuite) TestPackrMigrateDirPatch(c *C) {
 func (s *SqliteMigrateSuite) TestMigrateMaxPatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &FileMigrationSource{
-		Dir: "test-migrations-patch",
+		Dir: "test-migrations/patch",
 	}
 
 	// Executes one migration
@@ -202,12 +207,12 @@ func (s *SqliteMigrateSuite) TestMigrateMaxPatch(c *C) {
 func (s *SqliteMigrateSuite) TestMigrateDownPatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &FileMigrationSource{
-		Dir: "test-migrations-patch",
+		Dir: "test-migrations/patch",
 	}
 
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 5)
+	c.Assert(n, Equals, 2)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -227,7 +232,7 @@ func (s *SqliteMigrateSuite) TestMigrateDownPatch(c *C) {
 	// Remove the table.
 	n, err = ExecMax(s.Db, "sqlite3", migrations, Down, 0)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 4)
+	c.Assert(n, Equals, 1)
 
 	// Cannot query it anymore
 	_, err = s.DbMap.SelectInt("SELECT COUNT(*) FROM people")
@@ -242,12 +247,12 @@ func (s *SqliteMigrateSuite) TestMigrateDownPatch(c *C) {
 func (s *SqliteMigrateSuite) TestMigrateDownFullPatch(c *C) {
 	EnablePatchMode(true)
 	migrations := &FileMigrationSource{
-		Dir: "test-migrations-patch",
+		Dir: "test-migrations/patch",
 	}
 
 	n, err := Exec(s.Db, "sqlite3", migrations, Up)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 5)
+	c.Assert(n, Equals, 2)
 
 	// Has data
 	id, err := s.DbMap.SelectInt("SELECT id FROM people")
@@ -257,7 +262,7 @@ func (s *SqliteMigrateSuite) TestMigrateDownFullPatch(c *C) {
 	// Undo the last one
 	n, err = Exec(s.Db, "sqlite3", migrations, Down)
 	c.Assert(err, IsNil)
-	c.Assert(n, Equals, 5)
+	c.Assert(n, Equals, 2)
 
 	// Cannot query it anymore
 	_, err = s.DbMap.SelectInt("SELECT COUNT(*) FROM people")
@@ -445,15 +450,22 @@ func (s *SqliteMigrateSuite) TestPlanMigrationWithHolesPatch(c *C) {
 }
 
 func (s *SqliteMigrateSuite) TestLessPatch(c *C) {
-	c.Assert((MigrationPatch{VerInt: 1, PatchInt: 0}).Less(&MigrationPatch{VerInt: 2, PatchInt: 0}), Equals, true) // 1 less than 2
-	c.Assert((MigrationPatch{VerInt: 2}).Less(&MigrationPatch{VerInt: 2}), Equals, false)                          // 2 not less than 1
-	c.Assert((MigrationPatch{VerInt: 1}).Less(&MigrationPatch{Name: "a"}), Equals, false)                          // a(0) less than 1
-	c.Assert((MigrationPatch{Name: "a"}).Less(&MigrationPatch{Name: "1"}), Equals, false)                          // a not less than 1
-	c.Assert((MigrationPatch{Name: "a"}).Less(&MigrationPatch{Name: "a"}), Equals, false)                          // a not less than a
-	c.Assert((MigrationPatch{Name: "1-a"}).Less(&MigrationPatch{Name: "1-b"}), Equals, true)                       // 1-a less than 1-b
-	c.Assert((MigrationPatch{Name: "1-b"}).Less(&MigrationPatch{Name: "1-a"}), Equals, false)                      // 1-b not less than 1-a
-	c.Assert((MigrationPatch{Name: "1"}).Less(&MigrationPatch{Name: "10"}), Equals, true)                          // 1 less than 10
-	c.Assert((MigrationPatch{Name: "10"}).Less(&MigrationPatch{Name: "1"}), Equals, false)                         // 10 not less than 1
+	c.Assert((MigrationPatch{VerInt: 1, PatchInt: 0}).
+		Less(&MigrationPatch{VerInt: 2, PatchInt: 0}), Equals, true) // 1 less than 2
+	c.Assert((MigrationPatch{VerInt: 1, PatchInt: 0}).
+		Less(&MigrationPatch{VerInt: 1, PatchInt: 1}), Equals, true) // 1 less than 1.1
+	c.Assert((MigrationPatch{VerInt: 2, PatchInt: 1}).
+		Less(&MigrationPatch{VerInt: 2, PatchInt: 5}), Equals, true)                      // 2.1 less than 2.5
+	c.Assert((MigrationPatch{VerInt: 2}).Less(&MigrationPatch{VerInt: 2}), Equals, false) // 2 not less than 1
+	c.Assert((MigrationPatch{VerInt: 1}).Less(&MigrationPatch{Name: "a"}), Equals, false) // a(0) less than 1
+	c.Assert((MigrationPatch{Name: "a"}).Less(&MigrationPatch{Name: "1"}), Equals, false) // a not less than 1
+	c.Assert((MigrationPatch{VerInt: 1, PatchInt: 1, Name: "a"}).
+		Less(&MigrationPatch{VerInt: 1, PatchInt: 1, Name: "b"}), Equals, true)               // a less than b
+	c.Assert((MigrationPatch{Name: "a"}).Less(&MigrationPatch{Name: "a"}), Equals, false)     // a not less than a
+	c.Assert((MigrationPatch{Name: "1-a"}).Less(&MigrationPatch{Name: "1-b"}), Equals, true)  // 1-a less than 1-b
+	c.Assert((MigrationPatch{Name: "1-b"}).Less(&MigrationPatch{Name: "1-a"}), Equals, false) // 1-b not less than 1-a
+	c.Assert((MigrationPatch{Name: "1"}).Less(&MigrationPatch{Name: "10"}), Equals, true)     // 1 less than 10
+	c.Assert((MigrationPatch{Name: "10"}).Less(&MigrationPatch{Name: "1"}), Equals, false)    // 10 not less than 1
 	// 20160126_1100 less than 20160126_1200
 	c.Assert((MigrationPatch{VerInt: 20160126, PatchInt: 1100}).
 		Less(&MigrationPatch{VerInt: 20160126, PatchInt: 1200}), Equals, true)
