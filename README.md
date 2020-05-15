@@ -16,6 +16,7 @@ Using [modl](https://github.com/jmoiron/modl)? Check out [modl-migrate](https://
 * Up/down migrations to allow rollback
 * Supports multiple database types in one project
 * Works great with other libraries such as [sqlx](http://jmoiron.github.io/sqlx/)
+* Patch migration for major version
 
 ## Installation
 
@@ -298,6 +299,22 @@ CREATE UNIQUE INDEX people_unique_id_idx CONCURRENTLY ON people (id);
 -- +migrate Down
 DROP INDEX people_unique_id_idx;
 ```
+
+## Patching migration
+
+For Enable Patching migrations use function
+```go
+EnablePatchMode(true)
+```
+
+This mode required to use the following migration name format: 0000_00_name.sql (^(\d+)_(\d+)_.+$) and new structure migrations table.
+
+Recommended set new table name or delete old migration table
+```go
+SetTable("migrations")
+```
+
+It is possible to delete the first versions of major migrations. For example, two files 0001_00_name.sql and 0001_01_name.sql can be merged into one file 0001_01_name.sql.
 
 ## Embedding migrations with [packr](https://github.com/gobuffalo/packr)
 

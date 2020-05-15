@@ -15,8 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rubenv/sql-migrate/sqlparse"
 	"gopkg.in/gorp.v1"
+
+	"github.com/rubenv/sql-migrate/sqlparse"
 )
 
 type MigrationDirection int
@@ -37,6 +38,11 @@ type MigrationSet struct {
 	//
 	// This should be used sparingly as it is removing a safety check.
 	IgnoreUnknown bool
+	// EnablePatchMode enables patch mode for migrations
+	// Now it requires a new migration name format: 0001_00_name.sql and new table structure for save migrations
+	//
+	// It is recommended that you set a new table name(ex. "migrations") or delete the old migration table.
+	EnablePatchMode bool
 }
 
 var migSet = MigrationSet{}
@@ -55,39 +61,38 @@ var numberPrefixRegex = regexp.MustCompile(`^(\d+).*$`)
 // of already applied migrations and the currently found. For example, when the database
 // contains a migration which is not among the migrations list found for an operation.
 type PlanError struct {
-	Migration    *Migration
-	ErrorMessage string
+	MigrationName string
+	ErrorMessage  string
 }
 
-func newPlanError(migration *Migration, errorMessage string) error {
+func newPlanError(migrationName, errorMessage string) error {
 	return &PlanError{
-		Migration:    migration,
-		ErrorMessage: errorMessage,
+		MigrationName: migrationName,
+		ErrorMessage:  errorMessage,
 	}
 }
 
 func (p *PlanError) Error() string {
-	return fmt.Sprintf("Unable to create migration plan because of %s: %s",
-		p.Migration.Id, p.ErrorMessage)
+	return fmt.Sprintf("Unable to create migration plan because of %s: %s", p.MigrationName, p.ErrorMessage)
 }
 
 // TxError is returned when any error is encountered during a database
 // transaction. It contains the relevant *Migration and notes it's Id in the
 // Error function output.
 type TxError struct {
-	Migration *Migration
-	Err       error
+	MigrationName string
+	Err           error
 }
 
-func newTxError(migration *PlannedMigration, err error) error {
+func newTxError(migrationName string, err error) error {
 	return &TxError{
-		Migration: migration.Migration,
-		Err:       err,
+		MigrationName: migrationName,
+		Err:           err,
 	}
 }
 
 func (e *TxError) Error() string {
-	return e.Err.Error() + " handling " + e.Migration.Id
+	return e.Err.Error() + " handling " + e.MigrationName
 }
 
 // Set the name of the table used to store migration info.
@@ -112,6 +117,11 @@ func SetSchema(name string) {
 // This should be used sparingly as it is removing a safety check.
 func SetIgnoreUnknown(v bool) {
 	migSet.IgnoreUnknown = v
+}
+
+// EnablePatchMode enables patch mode for migrations
+func EnablePatchMode(v bool) {
+	migSet.EnablePatchMode = v
 }
 
 type Migration struct {
@@ -201,11 +211,15 @@ type MigrationSource interface {
 	//
 	// The resulting slice of migrations should be sorted by Id.
 	FindMigrations() ([]*Migration, error)
+
+	// The resulting slice of migrations should be sorted by version and patch with format 0001_00_name.sql.
+	FindMigrationsPatch() ([]*MigrationPatch, error)
 }
 
 // A hardcoded set of migrations, in-memory.
 type MemoryMigrationSource struct {
-	Migrations []*Migration
+	Migrations      []*Migration
+	MigrationsPatch []*MigrationPatch
 }
 
 var _ MigrationSource = (*MemoryMigrationSource)(nil)
@@ -412,6 +426,8 @@ func ParseMigration(id string, r io.ReadSeeker) (*Migration, error) {
 type SqlExecutor interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 	Insert(list ...interface{}) error
+	Update(list ...interface{}) (int64, error)
+	Get(i interface{}, keys ...interface{}) (interface{}, error)
 	Delete(list ...interface{}) (int64, error)
 }
 
@@ -424,7 +440,11 @@ func Exec(db *sql.DB, dialect string, m MigrationSource, dir MigrationDirection)
 
 // Returns the number of applied migrations.
 func (ms MigrationSet) Exec(db *sql.DB, dialect string, m MigrationSource, dir MigrationDirection) (int, error) {
-	return ms.ExecMax(db, dialect, m, dir, 0)
+	if ms.EnablePatchMode {
+		return ms.ExecMaxPatch(db, dialect, m, dir, 0)
+	} else {
+		return ms.ExecMax(db, dialect, m, dir, 0)
+	}
 }
 
 // Execute a set of migrations
@@ -433,7 +453,11 @@ func (ms MigrationSet) Exec(db *sql.DB, dialect string, m MigrationSource, dir M
 //
 // Returns the number of applied migrations.
 func ExecMax(db *sql.DB, dialect string, m MigrationSource, dir MigrationDirection, max int) (int, error) {
-	return migSet.ExecMax(db, dialect, m, dir, max)
+	if migSet.EnablePatchMode {
+		return migSet.ExecMaxPatch(db, dialect, m, dir, max)
+	} else {
+		return migSet.ExecMax(db, dialect, m, dir, max)
+	}
 }
 
 // Returns the number of applied migrations.
@@ -453,7 +477,7 @@ func (ms MigrationSet) ExecMax(db *sql.DB, dialect string, m MigrationSource, di
 		} else {
 			executor, err = dbMap.Begin()
 			if err != nil {
-				return applied, newTxError(migration, err)
+				return applied, newTxError(migration.Id, err)
 			}
 		}
 
@@ -467,7 +491,7 @@ func (ms MigrationSet) ExecMax(db *sql.DB, dialect string, m MigrationSource, di
 					_ = trans.Rollback()
 				}
 
-				return applied, newTxError(migration, err)
+				return applied, newTxError(migration.Id, err)
 			}
 		}
 
@@ -482,7 +506,7 @@ func (ms MigrationSet) ExecMax(db *sql.DB, dialect string, m MigrationSource, di
 					_ = trans.Rollback()
 				}
 
-				return applied, newTxError(migration, err)
+				return applied, newTxError(migration.Id, err)
 			}
 		case Down:
 			_, err := executor.Delete(&MigrationRecord{
@@ -493,7 +517,7 @@ func (ms MigrationSet) ExecMax(db *sql.DB, dialect string, m MigrationSource, di
 					_ = trans.Rollback()
 				}
 
-				return applied, newTxError(migration, err)
+				return applied, newTxError(migration.Id, err)
 			}
 		default:
 			panic("Not possible")
@@ -501,7 +525,7 @@ func (ms MigrationSet) ExecMax(db *sql.DB, dialect string, m MigrationSource, di
 
 		if trans, ok := executor.(*gorp.Transaction); ok {
 			if err := trans.Commit(); err != nil {
-				return applied, newTxError(migration, err)
+				return applied, newTxError(migration.Id, err)
 			}
 		}
 
@@ -551,7 +575,7 @@ func (ms MigrationSet) PlanMigration(db *sql.DB, dialect string, m MigrationSour
 		}
 		for _, existingMigration := range existingMigrations {
 			if _, ok := migrationsSearch[existingMigration.Id]; !ok {
-				return nil, nil, newPlanError(existingMigration, "unknown migration in database")
+				return nil, nil, newPlanError(existingMigration.Id, "unknown migration in database")
 			}
 		}
 	}
@@ -617,7 +641,7 @@ func SkipMax(db *sql.DB, dialect string, m MigrationSource, dir MigrationDirecti
 		} else {
 			executor, err = dbMap.Begin()
 			if err != nil {
-				return applied, newTxError(migration, err)
+				return applied, newTxError(migration.Id, err)
 			}
 		}
 
@@ -630,12 +654,12 @@ func SkipMax(db *sql.DB, dialect string, m MigrationSource, dir MigrationDirecti
 				_ = trans.Rollback()
 			}
 
-			return applied, newTxError(migration, err)
+			return applied, newTxError(migration.Id, err)
 		}
 
 		if trans, ok := executor.(*gorp.Transaction); ok {
 			if err := trans.Commit(); err != nil {
-				return applied, newTxError(migration, err)
+				return applied, newTxError(migration.Id, err)
 			}
 		}
 
@@ -744,7 +768,14 @@ Check https://github.com/go-sql-driver/mysql#parsetime for more info.`)
 
 	// Create migration database map
 	dbMap := &gorp.DbMap{Db: db, Dialect: d}
-	table := dbMap.AddTableWithNameAndSchema(MigrationRecord{}, ms.SchemaName, ms.getTableName()).SetKeys(false, "Id")
+	var table *gorp.TableMap
+	if ms.EnablePatchMode {
+		table = dbMap.AddTableWithNameAndSchema(MigrationPatchRecord{}, ms.SchemaName, ms.getTableName()).
+			SetKeys(false, "ver")
+	} else {
+		table = dbMap.AddTableWithNameAndSchema(MigrationRecord{}, ms.SchemaName, ms.getTableName()).
+			SetKeys(false, "Id")
+	}
 	//dbMap.TraceOn("", log.New(os.Stdout, "migrate: ", log.Lmicroseconds))
 
 	if dialect == "oci8" || dialect == "godror" {

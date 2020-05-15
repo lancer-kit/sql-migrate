@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/olekukonko/tablewriter"
+
 	"github.com/rubenv/sql-migrate"
 )
 
@@ -54,19 +55,38 @@ func (c *StatusCommand) Run(args []string) int {
 		return 1
 	}
 
+	var recordsPatch []*migrate.MigrationPatchRecord
+	records, err := migrate.GetMigrationRecords(db, dialect)
+	if err != nil {
+		recordsPatch, err = migrate.GetMigrationPatchRecords(db, dialect)
+		if err != nil {
+			ui.Error(err.Error())
+			return 1
+		}
+	}
+
 	source := migrate.FileMigrationSource{
 		Dir: env.Dir,
 	}
-	migrations, err := source.FindMigrations()
+
+	if records != nil {
+		err = c.showStatus(source, records)
+	} else {
+		err = c.showStatusPatch(source, recordsPatch)
+	}
+
 	if err != nil {
 		ui.Error(err.Error())
 		return 1
 	}
 
-	records, err := migrate.GetMigrationRecords(db, dialect)
+	return 0
+}
+
+func (c *StatusCommand) showStatus(source migrate.FileMigrationSource, records []*migrate.MigrationRecord) error {
+	migrations, err := source.FindMigrations()
 	if err != nil {
-		ui.Error(err.Error())
-		return 1
+		return err
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
@@ -108,11 +128,70 @@ func (c *StatusCommand) Run(args []string) int {
 
 	table.Render()
 
-	return 0
+	return nil
+}
+
+func (c *StatusCommand) showStatusPatch(source migrate.FileMigrationSource, records []*migrate.MigrationPatchRecord) error {
+	migrations, err := source.FindMigrationsPatch()
+	if err != nil {
+		return err
+	}
+
+	var existingMigrations []*statusRowPatch
+	for _, migrationRecord := range records {
+		em := &migrate.MigrationPatch{
+			Name:  migrationRecord.Name,
+			Ver:   migrationRecord.Ver,
+			Patch: migrationRecord.Patch,
+		}
+
+		if err := em.ParseName(); err != nil {
+			return err
+		}
+		existingMigrations = append(existingMigrations, &statusRowPatch{
+			MigrationPatch: em,
+			AppliedAt:      migrationRecord.CreatedAt,
+		})
+	}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"Migration", "Applied"})
+	table.SetColWidth(60)
+
+	for _, m := range migrations {
+		var existMigration *statusRowPatch
+		for _, existing := range existingMigrations {
+			if existing.VerInt == m.VerInt && existing.PatchInt >= m.PatchInt {
+				existMigration = existing
+				break
+			}
+		}
+
+		if existMigration != nil {
+			table.Append([]string{
+				m.Name,
+				existMigration.AppliedAt.String(),
+			})
+		} else {
+			table.Append([]string{
+				m.Name,
+				"no",
+			})
+		}
+	}
+
+	table.Render()
+
+	return nil
 }
 
 type statusRow struct {
 	Id        string
 	Migrated  bool
+	AppliedAt time.Time
+}
+
+type statusRowPatch struct {
+	*migrate.MigrationPatch
 	AppliedAt time.Time
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/rubenv/sql-migrate"
 )
 
-func ApplyMigrations(dir migrate.MigrationDirection, dryrun bool, limit int) error {
+func ApplyMigrations(dir migrate.MigrationDirection, dryrun, enablePatch bool, limit int) error {
 	env, err := GetEnvironment()
 	if err != nil {
 		return fmt.Errorf("Could not parse config: %s", err)
@@ -22,6 +22,17 @@ func ApplyMigrations(dir migrate.MigrationDirection, dryrun bool, limit int) err
 	}
 
 	if dryrun {
+		if enablePatch {
+			migrationsPatch, _, err := migrate.PlanMigrationPatch(db, dialect, source, dir, limit)
+			if err != nil {
+				return fmt.Errorf("Cannot plan migration: %s", err)
+			}
+			for _, m := range migrationsPatch {
+				PrintMigrationPatch(m, dir)
+			}
+			return nil
+		}
+
 		migrations, _, err := migrate.PlanMigration(db, dialect, source, dir, limit)
 		if err != nil {
 			return fmt.Errorf("Cannot plan migration: %s", err)
@@ -54,6 +65,22 @@ func PrintMigration(m *migrate.PlannedMigration, dir migrate.MigrationDirection)
 		}
 	} else if dir == migrate.Down {
 		ui.Output(fmt.Sprintf("==> Would apply migration %s (down)", m.Id))
+		for _, q := range m.Down {
+			ui.Output(q)
+		}
+	} else {
+		panic("Not reached")
+	}
+}
+
+func PrintMigrationPatch(m *migrate.PlannedMigrationPatch, dir migrate.MigrationDirection) {
+	if dir == migrate.Up {
+		ui.Output(fmt.Sprintf("==> Would apply migration %s (up)", m.Name))
+		for _, q := range m.Up {
+			ui.Output(q)
+		}
+	} else if dir == migrate.Down {
+		ui.Output(fmt.Sprintf("==> Would apply migration %s (down)", m.Name))
 		for _, q := range m.Down {
 			ui.Output(q)
 		}

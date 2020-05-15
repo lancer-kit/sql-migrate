@@ -22,6 +22,7 @@ Options:
   -config=dbconfig.yml   Configuration file to use.
   -env="development"     Environment.
   -limit=0               Limit the number of migrations (0 = unlimited).
+  -enablePatch           Enable patch versions
 
 `
 	return strings.TrimSpace(helpText)
@@ -34,17 +35,21 @@ func (c *SkipCommand) Synopsis() string {
 func (c *SkipCommand) Run(args []string) int {
 	var limit int
 	var dryrun bool
+	var enablePatch bool
 
 	cmdFlags := flag.NewFlagSet("up", flag.ContinueOnError)
 	cmdFlags.Usage = func() { ui.Output(c.Help()) }
 	cmdFlags.IntVar(&limit, "limit", 0, "Max number of migrations to skip.")
+	cmdFlags.BoolVar(&enablePatch, "enablePatch", false, "Enable patch versions.")
 	ConfigFlags(cmdFlags)
 
 	if err := cmdFlags.Parse(args); err != nil {
 		return 1
 	}
 
-	err := SkipMigrations(migrate.Up, dryrun, limit)
+	migrate.EnablePatchMode(enablePatch)
+
+	err := SkipMigrations(migrate.Up, dryrun, enablePatch, limit)
 	if err != nil {
 		ui.Error(err.Error())
 		return 1
@@ -53,7 +58,7 @@ func (c *SkipCommand) Run(args []string) int {
 	return 0
 }
 
-func SkipMigrations(dir migrate.MigrationDirection, dryrun bool, limit int) error {
+func SkipMigrations(dir migrate.MigrationDirection, dryrun, enablePatch bool, limit int) error {
 	env, err := GetEnvironment()
 	if err != nil {
 		return fmt.Errorf("Could not parse config: %s", err)
@@ -68,7 +73,12 @@ func SkipMigrations(dir migrate.MigrationDirection, dryrun bool, limit int) erro
 		Dir: env.Dir,
 	}
 
-	n, err := migrate.SkipMax(db, dialect, source, dir, limit)
+	var n int
+	if enablePatch {
+		n, err = migrate.SkipMaxPatch(db, dialect, source, dir, limit)
+	} else {
+		n, err = migrate.SkipMax(db, dialect, source, dir, limit)
+	}
 	if err != nil {
 		return fmt.Errorf("Migration failed: %s", err)
 	}
