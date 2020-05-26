@@ -9,7 +9,7 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 
-	"github.com/rubenv/sql-migrate"
+	"github.com/lancer-kit/sql-migrate"
 )
 
 type StatusCommand struct {

@@ -17,7 +17,7 @@ import (
 
 	"gopkg.in/gorp.v1"
 
-	"github.com/rubenv/sql-migrate/sqlparse"
+	"github.com/lancer-kit/sql-migrate/sqlparse"
 )
 
 type MigrationDirection int

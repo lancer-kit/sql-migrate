@@ -1,4 +1,4 @@
-module github.com/rubenv/sql-migrate
+module github.com/lancer-kit/sql-migrate
 
 go 1.11
 

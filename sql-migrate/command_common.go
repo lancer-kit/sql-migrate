@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/rubenv/sql-migrate"
+	"github.com/lancer-kit/sql-migrate"
 )
 
 func ApplyMigrations(dir migrate.MigrationDirection, dryrun, enablePatch bool, limit int) error {
