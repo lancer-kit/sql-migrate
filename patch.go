@@ -417,12 +417,13 @@ func (ms MigrationSet) PlanMigrationPatch(db *sql.DB, dialect string, m Migratio
 	// Make sure all migrations in the database are among the found migrations which
 	// are to be applied.
 	if !ms.IgnoreUnknown {
-		migrationsSearch := make(map[string]struct{})
+		migrationsSearch := make(map[string]int64)
 		for _, migration := range migrations {
-			migrationsSearch[migration.Ver+"_"+migration.Patch] = struct{}{}
+			migrationsSearch[migration.Ver] = migration.PatchInt
 		}
+
 		for _, existingMigration := range existingMigrations {
-			if _, ok := migrationsSearch[existingMigration.Ver+"_"+existingMigration.Patch]; !ok {
+			if _, ok := migrationsSearch[existingMigration.Ver]; !ok {
 				return nil, nil, newPlanError(existingMigration.Name, "unknown migration in database")
 			}
 		}
