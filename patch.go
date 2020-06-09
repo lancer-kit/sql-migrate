@@ -423,8 +423,13 @@ func (ms MigrationSet) PlanMigrationPatch(db *sql.DB, dialect string, m Migratio
 		}
 
 		for _, existingMigration := range existingMigrations {
-			if _, ok := migrationsSearch[existingMigration.Ver]; !ok {
-				return nil, nil, newPlanError(existingMigration.Name, "unknown migration in database")
+			patch, ok := migrationsSearch[existingMigration.Ver]
+
+			if !ok || existingMigration.PatchInt > patch {
+				return nil, nil, newPlanError(existingMigration.Name,
+					fmt.Sprintf("unknown migration in database (version: %s; patch: %s)",
+						existingMigration.Ver, existingMigration.Patch),
+				)
 			}
 		}
 	}
@@ -543,7 +548,7 @@ func ToApplyPatch(migrations []*MigrationPatch, current *MigrationPatch, directi
 	if current.Name != "" {
 		for index < len(migrations)-1 {
 			index++
-			if migrations[index].VerInt == current.VerInt && migrations[index].PatchInt == current.PatchInt {
+			if migrations[index].VerInt == current.VerInt && migrations[index].PatchInt >= current.PatchInt {
 				break
 			}
 		}
