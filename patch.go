@@ -35,9 +35,6 @@ type MigrationPatch struct {
 }
 
 func (m MigrationPatch) Less(other *MigrationPatch) bool {
-	if m.VerInt == other.VerInt && m.PatchInt == other.PatchInt {
-		return m.Name < other.Name
-	}
 	return m.VerInt < other.VerInt || (m.VerInt == other.VerInt && m.PatchInt < other.PatchInt)
 }
 
@@ -387,13 +384,13 @@ func (ms MigrationSet) PlanMigrationPatch(db *sql.DB, dialect string, m Migratio
 		return nil, nil, err
 	}
 
-	migrations, err := m.FindMigrationsPatch()
+	newMigrations, err := m.FindMigrationsPatch()
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var migrationRecords []MigrationPatchRecord
-	_, err = dbMap.Select(&migrationRecords, fmt.Sprintf("SELECT * FROM %s", dbMap.Dialect.QuotedTableForQuery(ms.SchemaName, ms.getTableName())))
+	_, err = dbMap.Select(&migrationRecords, fmt.Sprintf("SELECT * FROM %s ORDER BY ver", dbMap.Dialect.QuotedTableForQuery(ms.SchemaName, ms.getTableName())))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -418,7 +415,7 @@ func (ms MigrationSet) PlanMigrationPatch(db *sql.DB, dialect string, m Migratio
 	// are to be applied.
 	if !ms.IgnoreUnknown {
 		migrationsSearch := make(map[string]int64)
-		for _, migration := range migrations {
+		for _, migration := range newMigrations {
 			migrationsSearch[migration.Ver] = migration.PatchInt
 		}
 
@@ -435,9 +432,9 @@ func (ms MigrationSet) PlanMigrationPatch(db *sql.DB, dialect string, m Migratio
 	}
 
 	// Get last migration that was run
-	record := &MigrationPatch{}
+	lastMigration := &MigrationPatch{}
 	if len(existingMigrations) > 0 {
-		record = existingMigrations[len(existingMigrations)-1]
+		lastMigration = existingMigrations[len(existingMigrations)-1]
 	}
 
 	result := make([]*PlannedMigrationPatch, 0)
@@ -445,17 +442,17 @@ func (ms MigrationSet) PlanMigrationPatch(db *sql.DB, dialect string, m Migratio
 	// Add missing migrations up to the last run migration.
 	// This can happen for example when merges happened.
 	if len(existingMigrations) > 0 {
-		result = append(result, ToCatchupPatch(migrations, existingMigrations, record)...)
+		result = append(result, ToCatchupPatch(newMigrations, existingMigrations, lastMigration)...)
 	}
 
 	// Figure out which migrations to apply
-	toApply := ToApplyPatch(migrations, record, dir)
+	toApply := ToApplyPatch(newMigrations, lastMigration, dir)
 	toApplyCount := len(toApply)
 	if max > 0 && max < toApplyCount {
 		toApplyCount = max
 	}
-	for _, v := range toApply[0:toApplyCount] {
 
+	for _, v := range toApply[0:toApplyCount] {
 		if dir == Up {
 			result = append(result, &PlannedMigrationPatch{
 				MigrationPatch:     v,
@@ -543,20 +540,29 @@ func SkipMaxPatch(db *sql.DB, dialect string, m MigrationSource, dir MigrationDi
 }
 
 // Filter a slice of migrations into ones that should be applied.
-func ToApplyPatch(migrations []*MigrationPatch, current *MigrationPatch, direction MigrationDirection) []*MigrationPatch {
+func ToApplyPatch(newMigrations []*MigrationPatch, current *MigrationPatch, direction MigrationDirection) []*MigrationPatch {
 	var index = -1
+	var hasNew bool
 	if current.Name != "" {
-		for index < len(migrations)-1 {
+		for index < len(newMigrations)-1 {
 			index++
-			if migrations[index].VerInt == current.VerInt && migrations[index].PatchInt >= current.PatchInt {
+			m := newMigrations[index]
+			if current.Less(m) {
+				hasNew = true
 				break
 			}
 		}
 	}
 
 	if direction == Up {
-		return migrations[index+1:]
-	} else if direction == Down {
+		if !hasNew {
+			return []*MigrationPatch{}
+		}
+
+		return newMigrations[index:]
+	}
+
+	if direction == Down {
 		if index == -1 {
 			return []*MigrationPatch{}
 		}
@@ -564,7 +570,7 @@ func ToApplyPatch(migrations []*MigrationPatch, current *MigrationPatch, directi
 		// Add in reverse order
 		toApply := make([]*MigrationPatch, index+1)
 		for i := 0; i < index+1; i++ {
-			toApply[index-i] = migrations[i]
+			toApply[index-i] = newMigrations[i]
 		}
 		return toApply
 	}
@@ -572,9 +578,13 @@ func ToApplyPatch(migrations []*MigrationPatch, current *MigrationPatch, directi
 	panic("Not possible")
 }
 
-func ToCatchupPatch(migrations, existingMigrations []*MigrationPatch, lastRun *MigrationPatch) []*PlannedMigrationPatch {
+func ToCatchupPatch(newMigrations, existingMigrations []*MigrationPatch, last *MigrationPatch) []*PlannedMigrationPatch {
 	missing := make([]*PlannedMigrationPatch, 0)
-	for _, migration := range migrations {
+	for _, migration := range newMigrations {
+		if !migration.Less(last) {
+			break
+		}
+
 		found := false
 		for _, existing := range existingMigrations {
 			if existing.VerInt == migration.VerInt && existing.PatchInt >= migration.PatchInt {
@@ -582,7 +592,8 @@ func ToCatchupPatch(migrations, existingMigrations []*MigrationPatch, lastRun *M
 				break
 			}
 		}
-		if !found && migration.Less(lastRun) {
+
+		if !found {
 			missing = append(missing, &PlannedMigrationPatch{
 				MigrationPatch:     migration,
 				Queries:            migration.Up,
