@@ -552,6 +552,9 @@ func ToApplyPatch(newMigrations []*MigrationPatch, current *MigrationPatch, dire
 				break
 			}
 		}
+	} else {
+		hasNew = true
+		index = 0
 	}
 
 	if direction == Up {
